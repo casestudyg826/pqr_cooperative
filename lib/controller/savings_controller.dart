@@ -41,6 +41,12 @@ class SavingsController extends ChangeNotifier {
   List<SavingsTransaction> get transactions =>
       List.unmodifiable(_transactions.reversed);
 
+  List<SavingsTransaction> transactionsFor(String memberId) {
+    return _transactions.reversed
+        .where((transaction) => transaction.memberId == memberId)
+        .toList();
+  }
+
   double get totalSavings => _transactions.fold(
     0,
     (sum, transaction) => sum + transaction.signedAmount,

@@ -66,4 +66,39 @@ void main() {
 
     expect(find.text('Carlo Mendoza'), findsOneWidget);
   });
+
+  testWidgets('reports tab shows available PDF reports', (tester) async {
+    configureDesktopView(tester);
+    await tester.pumpWidget(buildTestApp());
+    await tester.tap(find.byKey(const Key('loginButton')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Reports'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Available Reports'), findsOneWidget);
+    expect(find.text('Monthly Financial Statement'), findsOneWidget);
+    expect(find.text('Member Savings Report'), findsOneWidget);
+    expect(find.text('Loan Portfolio Report'), findsOneWidget);
+    expect(find.text('CDA Compliance Report'), findsOneWidget);
+    expect(find.text('Membership Activity Report'), findsOneWidget);
+    expect(find.text('Generate'), findsNWidgets(5));
+  });
+
+  testWidgets('savings tab shows private member accounts', (tester) async {
+    configureDesktopView(tester);
+    await tester.pumpWidget(buildTestApp());
+    await tester.tap(find.byKey(const Key('loginButton')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Savings'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Savings Accounts'), findsOneWidget);
+    expect(find.text('Member accounts'), findsOneWidget);
+    expect(find.text('Maria Santos'), findsWidgets);
+    expect(find.text('Juan Dela Cruz'), findsWidgets);
+    expect(find.text('Ana Reyes'), findsWidgets);
+    expect(find.text('Account transaction history'), findsOneWidget);
+  });
 }

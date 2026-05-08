@@ -3,6 +3,7 @@ import 'package:flutter/widgets.dart';
 import 'auth_controller.dart';
 import 'loan_controller.dart';
 import 'member_controller.dart';
+import 'pdf_report_controller.dart';
 import 'report_controller.dart';
 import 'savings_controller.dart';
 
@@ -19,6 +20,7 @@ class AppController extends ChangeNotifier {
   final SavingsController savings = SavingsController();
   final LoanController loans = LoanController();
   final ReportController reports = ReportController();
+  final PdfReportController pdfReports = PdfReportController();
 
   @override
   void dispose() {

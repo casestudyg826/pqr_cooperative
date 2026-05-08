@@ -62,6 +62,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
             ),
       body: isDesktop
           ? Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 NavigationRail(
                   extended: MediaQuery.sizeOf(context).width >= 1120,

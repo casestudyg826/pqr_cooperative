@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../controller/app_controller.dart';
+import '../module/app_user.dart';
 
 class SettingsBackupScreen extends StatefulWidget {
   const SettingsBackupScreen({super.key});
@@ -10,8 +11,6 @@ class SettingsBackupScreen extends StatefulWidget {
 }
 
 class _SettingsBackupScreenState extends State<SettingsBackupScreen> {
-  DateTime? _lastBackup;
-
   @override
   Widget build(BuildContext context) {
     final app = AppScope.of(context);
@@ -61,22 +60,16 @@ class _SettingsBackupScreenState extends State<SettingsBackupScreen> {
                 title: 'Backup Status',
                 icon: Icons.backup_outlined,
                 children: [
-                  _Line(
-                    label: 'Last backup',
-                    value: _lastBackup == null
-                        ? 'Not yet created'
-                        : _dateTime(_lastBackup!),
-                  ),
+                  const _Line(label: 'Status', value: 'Prototype only'),
                   _Line(
                     label: 'Records included',
                     value:
                         '${summary.totalMembers} members, ${summary.activeLoans + summary.pendingLoans} active/pending loans',
                   ),
-                  _Line(label: 'Storage', value: 'Simulated local backup'),
+                  const _Line(label: 'Storage', value: 'Not implemented yet'),
                   const SizedBox(height: 12),
                   FilledButton.icon(
-                    onPressed: () =>
-                        setState(() => _lastBackup = DateTime.now()),
+                    onPressed: _runBackup,
                     icon: const Icon(Icons.cloud_done_outlined),
                     label: const Text('Run backup now'),
                   ),
@@ -102,17 +95,241 @@ class _SettingsBackupScreenState extends State<SettingsBackupScreen> {
               );
             },
           ),
+          const SizedBox(height: 16),
+          _UserManagementCard(
+            currentUser: user,
+            onAdd: () => _showUserDialog(context),
+            onEdit: (target) => _showUserDialog(context, user: target),
+          ),
         ],
       ),
     );
   }
 
-  static String _dateTime(DateTime value) {
-    final date =
-        '${value.year}-${value.month.toString().padLeft(2, '0')}-${value.day.toString().padLeft(2, '0')}';
-    final time =
-        '${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
-    return '$date $time';
+  void _runBackup() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Backup does nothing for now.')),
+    );
+  }
+
+  Future<void> _showUserDialog(BuildContext context, {AppUser? user}) async {
+    final app = AppScope.of(context);
+    final isEdit = user != null;
+    final nameController = TextEditingController(text: user?.displayName ?? '');
+    final usernameController = TextEditingController(
+      text: user?.username ?? '',
+    );
+    final passwordController = TextEditingController(
+      text: user?.password ?? '',
+    );
+    final formKey = GlobalKey<FormState>();
+    var role = user?.role ?? UserRole.administrator;
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: Text(isEdit ? 'Edit user' : 'Add user'),
+              content: SizedBox(
+                width: 520,
+                child: Form(
+                  key: formKey,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      TextFormField(
+                        controller: nameController,
+                        decoration: const InputDecoration(
+                          labelText: 'Display name',
+                        ),
+                        validator: _required,
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: usernameController,
+                        decoration: const InputDecoration(
+                          labelText: 'Username',
+                        ),
+                        validator: _required,
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: passwordController,
+                        decoration: const InputDecoration(
+                          labelText: 'Password',
+                        ),
+                        validator: _required,
+                      ),
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<UserRole>(
+                        initialValue: role,
+                        decoration: const InputDecoration(labelText: 'Role'),
+                        items: const [
+                          DropdownMenuItem(
+                            value: UserRole.administrator,
+                            child: Text('Administrator'),
+                          ),
+                          DropdownMenuItem(
+                            value: UserRole.treasurer,
+                            child: Text('Treasurer'),
+                          ),
+                        ],
+                        onChanged: (value) {
+                          if (value != null) {
+                            setDialogState(() => role = value);
+                          }
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () {
+                    if (!formKey.currentState!.validate()) {
+                      return;
+                    }
+
+                    final success = isEdit
+                        ? app.auth.updateUser(
+                            id: user.id,
+                            displayName: nameController.text,
+                            username: usernameController.text,
+                            password: passwordController.text,
+                            role: role,
+                          )
+                        : app.auth.addUser(
+                            displayName: nameController.text,
+                            username: usernameController.text,
+                            password: passwordController.text,
+                            role: role,
+                          );
+
+                    if (!success) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                            'Unable to save user. Check fields or username uniqueness.',
+                          ),
+                        ),
+                      );
+                      return;
+                    }
+
+                    Navigator.of(dialogContext).pop();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(isEdit ? 'User updated.' : 'User added.'),
+                      ),
+                    );
+                  },
+                  child: const Text('Save'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (!mounted) {
+      return;
+    }
+  }
+
+  static String? _required(String? value) {
+    if (value == null || value.trim().isEmpty) {
+      return 'Required.';
+    }
+    return null;
+  }
+}
+
+class _UserManagementCard extends StatelessWidget {
+  const _UserManagementCard({
+    required this.currentUser,
+    required this.onAdd,
+    required this.onEdit,
+  });
+
+  final AppUser currentUser;
+  final VoidCallback onAdd;
+  final ValueChanged<AppUser> onEdit;
+
+  @override
+  Widget build(BuildContext context) {
+    final app = AppScope.of(context);
+    final users = app.auth.users;
+
+    return _InfoCard(
+      title: 'User Management',
+      icon: Icons.manage_accounts_outlined,
+      children: [
+        if (!currentUser.isAdministrator)
+          const Padding(
+            padding: EdgeInsets.only(bottom: 12),
+            child: Text(
+              'Only administrators can add and edit user credentials.',
+            ),
+          )
+        else
+          Align(
+            alignment: Alignment.centerLeft,
+            child: FilledButton.icon(
+              onPressed: onAdd,
+              icon: const Icon(Icons.person_add_alt_1),
+              label: const Text('Add user'),
+            ),
+          ),
+        const SizedBox(height: 12),
+        for (final user in users)
+          Container(
+            margin: const EdgeInsets.only(bottom: 10),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              border: Border.all(color: const Color(0xFFE0E4DD)),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              children: [
+                const CircleAvatar(
+                  radius: 18,
+                  backgroundColor: Color(0xFFE8EFE9),
+                  foregroundColor: Color(0xFF235347),
+                  child: Icon(Icons.person_outline, size: 18),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        user.displayName,
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                      const SizedBox(height: 2),
+                      Text('${user.username} • ${user.roleLabel}'),
+                    ],
+                  ),
+                ),
+                if (currentUser.isAdministrator)
+                  OutlinedButton.icon(
+                    onPressed: () => onEdit(user),
+                    icon: const Icon(Icons.edit_outlined),
+                    label: const Text('Edit'),
+                  ),
+              ],
+            ),
+          ),
+      ],
+    );
   }
 }
 

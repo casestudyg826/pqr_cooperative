@@ -14,11 +14,7 @@ class DashboardScreen extends StatelessWidget {
       loans: app.loans,
     );
     final width = MediaQuery.sizeOf(context).width;
-    final crossAxisCount = width >= 1200
-        ? 5
-        : width >= 760
-        ? 3
-        : 1;
+    final isDesktop = width >= 960;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
@@ -36,40 +32,60 @@ class DashboardScreen extends StatelessWidget {
             'Monitor membership, savings balances, loans, and overdue accounts.',
           ),
           const SizedBox(height: 24),
-          GridView.count(
-            crossAxisCount: crossAxisCount,
-            crossAxisSpacing: 12,
-            mainAxisSpacing: 12,
-            childAspectRatio: width >= 760 ? 1.5 : 3.2,
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            children: [
-              _SummaryCard(
-                title: 'Total Members',
-                value: '${summary.totalMembers}',
-                icon: Icons.groups,
-              ),
-              _SummaryCard(
-                title: 'Total Savings',
-                value: _money(summary.totalSavings),
-                icon: Icons.savings,
-              ),
-              _SummaryCard(
-                title: 'Active Loans',
-                value: '${summary.activeLoans}',
-                icon: Icons.assignment_turned_in,
-              ),
-              _SummaryCard(
-                title: 'Pending Loans',
-                value: '${summary.pendingLoans}',
-                icon: Icons.hourglass_top,
-              ),
-              _SummaryCard(
-                title: 'Overdue Payments',
-                value: '${summary.overdueLoans}',
-                icon: Icons.warning_amber,
-              ),
-            ],
+          LayoutBuilder(
+            builder: (context, constraints) {
+              const spacing = 12.0;
+              final columns = constraints.maxWidth >= 1200
+                  ? 5
+                  : constraints.maxWidth >= 760
+                  ? 3
+                  : 1;
+              final cardWidth =
+                  (constraints.maxWidth - (spacing * (columns - 1))) / columns;
+              final metrics = [
+                _DashboardMetric(
+                  title: 'Total Members',
+                  value: '${summary.totalMembers}',
+                  icon: Icons.groups,
+                ),
+                _DashboardMetric(
+                  title: 'Total Savings',
+                  value: _money(summary.totalSavings),
+                  icon: Icons.savings,
+                ),
+                _DashboardMetric(
+                  title: 'Active Loans',
+                  value: '${summary.activeLoans}',
+                  icon: Icons.assignment_turned_in,
+                ),
+                _DashboardMetric(
+                  title: 'Pending Loans',
+                  value: '${summary.pendingLoans}',
+                  icon: Icons.hourglass_top,
+                ),
+                _DashboardMetric(
+                  title: 'Overdue Payments',
+                  value: '${summary.overdueLoans}',
+                  icon: Icons.warning_amber,
+                ),
+              ];
+
+              return Wrap(
+                spacing: spacing,
+                runSpacing: spacing,
+                children: [
+                  for (final metric in metrics)
+                    SizedBox(
+                      width: cardWidth,
+                      child: _SummaryCard(
+                        title: metric.title,
+                        value: metric.value,
+                        icon: metric.icon,
+                      ),
+                    ),
+                ],
+              );
+            },
           ),
           const SizedBox(height: 24),
           LayoutBuilder(
@@ -77,8 +93,12 @@ class DashboardScreen extends StatelessWidget {
               final twoColumns = constraints.maxWidth >= 900;
               final savingsPanel = _ActivityPanel(
                 title: 'Recent Savings Activity',
+                compact: isDesktop,
                 children: app.savings.transactions.take(4).map((transaction) {
                   return ListTile(
+                    dense: true,
+                    visualDensity: const VisualDensity(vertical: -2),
+                    minVerticalPadding: 0,
                     contentPadding: EdgeInsets.zero,
                     leading: Icon(
                       transaction.signedAmount >= 0
@@ -93,8 +113,12 @@ class DashboardScreen extends StatelessWidget {
               );
               final loanPanel = _ActivityPanel(
                 title: 'Loan Queue',
+                compact: isDesktop,
                 children: app.loans.loans.take(4).map((loan) {
                   return ListTile(
+                    dense: true,
+                    visualDensity: const VisualDensity(vertical: -2),
+                    minVerticalPadding: 0,
                     contentPadding: EdgeInsets.zero,
                     leading: const Icon(Icons.request_quote_outlined),
                     title: Text(app.members.nameFor(loan.memberId)),
@@ -146,9 +170,11 @@ class _SummaryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Card(
+      margin: EdgeInsets.zero,
       child: Padding(
         padding: const EdgeInsets.all(18),
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             CircleAvatar(
               backgroundColor: const Color(0xFFE8EFE9),
@@ -159,7 +185,8 @@ class _SummaryCard extends StatelessWidget {
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisAlignment: MainAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
                     title,
@@ -186,19 +213,38 @@ class _SummaryCard extends StatelessWidget {
   }
 }
 
+class _DashboardMetric {
+  const _DashboardMetric({
+    required this.title,
+    required this.value,
+    required this.icon,
+  });
+
+  final String title;
+  final String value;
+  final IconData icon;
+}
+
 class _ActivityPanel extends StatelessWidget {
-  const _ActivityPanel({required this.title, required this.children});
+  const _ActivityPanel({
+    required this.title,
+    required this.children,
+    this.compact = false,
+  });
 
   final String title;
   final List<Widget> children;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(20),
+        padding: EdgeInsets.all(compact ? 16 : 20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
           children: [
             Text(
               title,
@@ -206,7 +252,7 @@ class _ActivityPanel extends StatelessWidget {
                 context,
               ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
             ),
-            const SizedBox(height: 8),
+            SizedBox(height: compact ? 4 : 8),
             if (children.isEmpty)
               const Text('No activity yet.')
             else
