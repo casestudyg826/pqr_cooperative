@@ -37,7 +37,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
           ),
           const SizedBox(height: 8),
           const Text(
-            'Generated from current local member, savings, and loan records.',
+            'Generated from current backend member, savings, and loan records.',
           ),
           const SizedBox(height: 20),
           _AvailableReportsCard(
@@ -111,9 +111,9 @@ class _ReportsScreenState extends State<ReportsScreen> {
           _ReportCard(
             title: 'Report Notes',
             rows: const [
-              _ReportRow('Storage mode', 'Local in-memory prototype'),
+              _ReportRow('Storage mode', 'Supabase backend'),
               _ReportRow('External banking integration', 'Not included'),
-              _ReportRow('Backup', 'Simulated from backup screen'),
+              _ReportRow('Backup', 'Recorded from backup screen'),
               _ReportRow('Data quality', 'Depends on staff-entered records'),
             ],
           ),

@@ -1,45 +1,24 @@
 import 'package:flutter/foundation.dart';
 
+import '../backend/backend_api.dart';
 import '../module/savings_transaction.dart';
 
 class SavingsController extends ChangeNotifier {
-  final List<SavingsTransaction> _transactions = [
-    SavingsTransaction(
-      id: 's001',
-      memberId: 'm001',
-      type: SavingsTransactionType.contribution,
-      amount: 15000,
-      date: DateTime(2025, 1, 15),
-      note: 'Opening savings balance',
-    ),
-    SavingsTransaction(
-      id: 's002',
-      memberId: 'm002',
-      type: SavingsTransactionType.contribution,
-      amount: 9200,
-      date: DateTime(2025, 2, 7),
-      note: 'Monthly contribution',
-    ),
-    SavingsTransaction(
-      id: 's003',
-      memberId: 'm003',
-      type: SavingsTransactionType.contribution,
-      amount: 12500,
-      date: DateTime(2025, 2, 18),
-      note: 'Opening savings balance',
-    ),
-    SavingsTransaction(
-      id: 's004',
-      memberId: 'm001',
-      type: SavingsTransactionType.withdrawal,
-      amount: 2000,
-      date: DateTime(2025, 3, 10),
-      note: 'Member withdrawal',
-    ),
-  ];
+  SavingsController(this._backend, this._sessionToken);
+
+  final BackendApi _backend;
+  final String Function() _sessionToken;
+  final List<SavingsTransaction> _transactions = [];
 
   List<SavingsTransaction> get transactions =>
       List.unmodifiable(_transactions.reversed);
+
+  void replaceAll(List<SavingsTransaction> transactions) {
+    _transactions
+      ..clear()
+      ..addAll(transactions);
+    notifyListeners();
+  }
 
   List<SavingsTransaction> transactionsFor(String memberId) {
     return _transactions.reversed
@@ -58,22 +37,20 @@ class SavingsController extends ChangeNotifier {
         .fold(0, (sum, transaction) => sum + transaction.signedAmount);
   }
 
-  void recordTransaction({
+  Future<void> recordTransaction({
     required String memberId,
     required SavingsTransactionType type,
     required double amount,
     required String note,
-  }) {
-    _transactions.add(
-      SavingsTransaction(
-        id: 's${DateTime.now().microsecondsSinceEpoch}',
-        memberId: memberId,
-        type: type,
-        amount: amount,
-        date: DateTime.now(),
-        note: note.trim().isEmpty ? type.name : note.trim(),
-      ),
+  }) async {
+    final transaction = await _backend.recordSavingsTransaction(
+      _sessionToken(),
+      memberId: memberId,
+      type: type,
+      amount: amount,
+      note: note,
     );
+    _transactions.add(transaction);
     notifyListeners();
   }
 

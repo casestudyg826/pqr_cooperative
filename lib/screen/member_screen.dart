@@ -109,40 +109,17 @@ class _MemberScreenState extends State<MemberScreen> {
                                 ),
                                 DataCell(Text(member.status.name)),
                                 DataCell(
-                                  Wrap(
-                                    spacing: 4,
-                                    children: [
-                                      IconButton(
-                                        tooltip: 'View',
-                                        onPressed: () =>
-                                            _showMemberDetails(context, member),
-                                        icon: const Icon(
-                                          Icons.visibility_outlined,
-                                        ),
-                                      ),
-                                      IconButton(
-                                        tooltip: 'Edit',
-                                        onPressed: () => _showMemberDialog(
-                                          context,
-                                          member: member,
-                                        ),
-                                        icon: const Icon(Icons.edit_outlined),
-                                      ),
-                                      IconButton(
-                                        key: Key('deleteMember_${member.id}'),
-                                        tooltip: 'Delete',
-                                        onPressed: () => _confirmDeleteMember(
-                                          context,
-                                          member,
-                                        ),
-                                        icon: Icon(
-                                          Icons.delete_outline,
-                                          color: Theme.of(
-                                            context,
-                                          ).colorScheme.error,
-                                        ),
-                                      ),
-                                    ],
+                                  _MemberActions(
+                                    member: member,
+                                    compact: true,
+                                    onView: () =>
+                                        _showMemberDetails(context, member),
+                                    onEdit: () => _showMemberDialog(
+                                      context,
+                                      member: member,
+                                    ),
+                                    onDelete: () =>
+                                        _confirmDeleteMember(context, member),
                                   ),
                                 ),
                               ],
@@ -162,28 +139,13 @@ class _MemberScreenState extends State<MemberScreen> {
                               'Loans: ${_loanStatusLabel(app.loans.loansForMember(member.id))}',
                             ),
                             isThreeLine: true,
-                            trailing: Wrap(
-                              spacing: 4,
-                              children: [
-                                IconButton(
-                                  tooltip: 'Edit',
-                                  icon: const Icon(Icons.edit_outlined),
-                                  onPressed: () => _showMemberDialog(
-                                    context,
-                                    member: member,
-                                  ),
-                                ),
-                                IconButton(
-                                  key: Key('deleteMember_${member.id}'),
-                                  tooltip: 'Delete',
-                                  icon: Icon(
-                                    Icons.delete_outline,
-                                    color: Theme.of(context).colorScheme.error,
-                                  ),
-                                  onPressed: () =>
-                                      _confirmDeleteMember(context, member),
-                                ),
-                              ],
+                            trailing: _MemberActions(
+                              member: member,
+                              compact: true,
+                              onEdit: () =>
+                                  _showMemberDialog(context, member: member),
+                              onDelete: () =>
+                                  _confirmDeleteMember(context, member),
                             ),
                             onTap: () => _showMemberDetails(context, member),
                           ),
@@ -277,27 +239,38 @@ class _MemberScreenState extends State<MemberScreen> {
                 ),
                 FilledButton(
                   key: const Key('saveMemberButton'),
-                  onPressed: () {
+                  onPressed: () async {
                     if (!formKey.currentState!.validate()) {
                       return;
                     }
-                    if (member == null) {
-                      app.members.addMember(
-                        fullName: nameController.text,
-                        address: addressController.text,
-                        phone: phoneController.text,
-                      );
-                    } else {
-                      app.members.updateMember(
-                        member.copyWith(
-                          fullName: nameController.text.trim(),
-                          address: addressController.text.trim(),
-                          phone: phoneController.text.trim(),
-                          status: status,
-                        ),
-                      );
+                    try {
+                      if (member == null) {
+                        await app.members.addMember(
+                          fullName: nameController.text,
+                          address: addressController.text,
+                          phone: phoneController.text,
+                        );
+                      } else {
+                        await app.members.updateMember(
+                          member.copyWith(
+                            fullName: nameController.text.trim(),
+                            address: addressController.text.trim(),
+                            phone: phoneController.text.trim(),
+                            status: status,
+                          ),
+                        );
+                      }
+                      if (dialogContext.mounted) {
+                        Navigator.of(dialogContext).pop();
+                      }
+                    } catch (error) {
+                      if (!context.mounted) {
+                        return;
+                      }
+                      ScaffoldMessenger.of(
+                        context,
+                      ).showSnackBar(SnackBar(content: Text(error.toString())));
                     }
-                    Navigator.of(dialogContext).pop();
                   },
                   child: const Text('Save'),
                 ),
@@ -365,7 +338,7 @@ class _MemberScreenState extends State<MemberScreen> {
         return AlertDialog(
           title: const Text('Delete member'),
           content: Text(
-            'Delete ${member.fullName}? This removes their local savings transactions and loan records from this prototype.',
+            'Delete ${member.fullName}? This removes their savings transactions and loan records from the backend.',
           ),
           actions: [
             TextButton(
@@ -386,12 +359,24 @@ class _MemberScreenState extends State<MemberScreen> {
       return;
     }
 
-    app.savings.deleteTransactionsForMember(member.id);
-    app.loans.deleteLoansForMember(member.id);
-    app.members.deleteMember(member.id);
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text('${member.fullName} deleted.')));
+    try {
+      await app.members.deleteMember(member.id);
+      app.savings.deleteTransactionsForMember(member.id);
+      app.loans.deleteLoansForMember(member.id);
+      if (!context.mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('${member.fullName} deleted.')));
+    } catch (error) {
+      if (!context.mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.toString())));
+    }
   }
 
   static String? _required(String? value) =>
@@ -442,6 +427,108 @@ class _MemberScreenState extends State<MemberScreen> {
 
   static double _outstandingLoanBalance(List<Loan> loans) {
     return loans.fold(0, (sum, loan) => sum + loan.outstandingBalance);
+  }
+}
+
+class _MemberActions extends StatelessWidget {
+  const _MemberActions({
+    required this.member,
+    required this.onEdit,
+    required this.onDelete,
+    this.onView,
+    this.compact = false,
+  });
+
+  final Member member;
+  final VoidCallback? onView;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final actions = <Widget>[
+      if (onView != null)
+        _ActionIconButton(
+          key: Key('viewMember_${member.id}'),
+          tooltip: 'View',
+          icon: Icons.visibility_outlined,
+          onPressed: onView!,
+        ),
+      if (onView != null) _ActionDivider(color: colors.outlineVariant),
+      _ActionIconButton(
+        key: Key('editMember_${member.id}'),
+        tooltip: 'Edit',
+        icon: Icons.edit_outlined,
+        onPressed: onEdit,
+      ),
+      _ActionDivider(color: colors.outlineVariant),
+      _ActionIconButton(
+        key: Key('deleteMember_${member.id}'),
+        tooltip: 'Delete',
+        icon: Icons.delete_outline,
+        color: colors.error,
+        onPressed: onDelete,
+      ),
+    ];
+
+    return Container(
+      height: 40,
+      decoration: BoxDecoration(
+        color: colors.surface,
+        border: Border.all(color: colors.outlineVariant),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Row(
+        mainAxisSize: compact ? MainAxisSize.min : MainAxisSize.max,
+        children: actions,
+      ),
+    );
+  }
+}
+
+class _ActionIconButton extends StatelessWidget {
+  const _ActionIconButton({
+    super.key,
+    required this.tooltip,
+    required this.icon,
+    required this.onPressed,
+    this.color,
+  });
+
+  final String tooltip;
+  final IconData icon;
+  final VoidCallback onPressed;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      tooltip: tooltip,
+      iconSize: 20,
+      visualDensity: VisualDensity.compact,
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints.tightFor(width: 40, height: 40),
+      color: color,
+      onPressed: onPressed,
+      icon: Icon(icon),
+    );
+  }
+}
+
+class _ActionDivider extends StatelessWidget {
+  const _ActionDivider({required this.color});
+
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 22,
+      child: VerticalDivider(width: 1, thickness: 1, color: color),
+    );
   }
 }
 

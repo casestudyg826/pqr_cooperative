@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:pqr_cooperative/backend/memory_backend_api.dart';
 import 'package:pqr_cooperative/controller/app_controller.dart';
 import 'package:pqr_cooperative/main.dart';
+import 'package:pqr_cooperative/module/loan.dart';
+import 'package:pqr_cooperative/module/savings_transaction.dart';
 
 Widget buildTestApp() {
   return AppScope(
@@ -21,6 +24,58 @@ void configureDesktopView(
 }
 
 void main() {
+  test('custom admin login loads backend cooperative records', () async {
+    final app = AppController(backend: MemoryBackendApi.seeded());
+
+    final loggedIn = await app.login('admin', 'admin123');
+
+    expect(loggedIn, isTrue);
+    expect(app.auth.currentUser?.username, 'admin');
+    expect(app.auth.currentUser?.isAdministrator, isTrue);
+    expect(
+      app.members.members.map((member) => member.fullName),
+      contains('Maria Santos'),
+    );
+    expect(app.savings.totalSavings, 34700);
+    expect(app.loans.pendingCount, 1);
+  });
+
+  test('backend-loaded staff users do not expose password values', () async {
+    final app = AppController(backend: MemoryBackendApi.seeded());
+
+    await app.login('admin', 'admin123');
+
+    expect(app.auth.users, isNotEmpty);
+    expect(app.auth.users.every((user) => user.password.isEmpty), isTrue);
+  });
+
+  test(
+    'controllers persist savings and loan mutations through backend',
+    () async {
+      final app = AppController(backend: MemoryBackendApi.seeded());
+      await app.login('admin', 'admin123');
+
+      await app.savings.recordTransaction(
+        memberId: 'm001',
+        type: SavingsTransactionType.contribution,
+        amount: 500,
+        note: 'Backend deposit',
+      );
+      await app.loans.addLoan(
+        memberId: 'm003',
+        principal: 10000,
+        annualInterestRate: 0.12,
+        termMonths: 12,
+      );
+
+      expect(app.savings.balanceFor('m001'), 13500);
+      expect(
+        app.loans.loansForMember('m003').single.status,
+        LoanStatus.pending,
+      );
+    },
+  );
+
   testWidgets('app launches to login screen', (tester) async {
     await tester.pumpWidget(buildTestApp());
 

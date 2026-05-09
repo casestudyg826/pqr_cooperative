@@ -1,17 +1,61 @@
-# pqr_cooperative
+# PQR Cooperative
 
-A new Flutter project.
+Flutter member, savings, loan, repayment, reporting, user-management, and backup system backed by Supabase.
 
-## Getting Started
+## Backend
 
-This project is a starting point for a Flutter application.
+Supabase project: `mpnhnvwttnrkolhtgmzh`
 
-A few resources to get you started if this is your first Flutter project:
+Deployed backend pieces:
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+- Postgres tables for users, sessions, members, savings transactions, loans, repayments, backup runs, and audit events.
+- RLS enabled on all public tables.
+- Edge Function: `pqr-api`.
+- Seed credentials preserved:
+  - Administrator: `admin / admin123`
+  - Treasurer: `treasurer / treasurer123`
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+Passwords are hashed in Postgres. Flutter receives custom session tokens from `pqr-api`; it does not store staff passwords.
+
+## Local Development
+
+Without Dart defines, the app falls back to a seeded in-memory backend for tests and offline UI work.
+
+Run against Supabase:
+
+```bash
+flutter run -d chrome \
+  --dart-define=SUPABASE_URL=https://mpnhnvwttnrkolhtgmzh.supabase.co \
+  --dart-define=SUPABASE_FUNCTION_SLUG=pqr-api
+```
+
+Run checks:
+
+```bash
+flutter pub get
+flutter analyze
+flutter test
+```
+
+Build web against Supabase:
+
+```bash
+flutter build web --release \
+  --dart-define=SUPABASE_URL=https://mpnhnvwttnrkolhtgmzh.supabase.co \
+  --dart-define=SUPABASE_FUNCTION_SLUG=pqr-api
+```
+
+## Vercel
+
+The repository includes `vercel.json` and `scripts/vercel-build.sh`. Configure these Vercel environment variables:
+
+- `SUPABASE_URL`: `https://mpnhnvwttnrkolhtgmzh.supabase.co`
+- `SUPABASE_FUNCTION_SLUG`: `pqr-api` (optional, defaults to `pqr-api`)
+
+Vercel builds Flutter web into `build/web` and serves it as a static app.
+
+## Supabase Files
+
+- `supabase/migrations/20260509000000_pqr_backend.sql`
+- `supabase/migrations/20260509001000_fix_pgcrypto_function_search_path.sql`
+- `supabase/functions/pqr-api/index.ts`

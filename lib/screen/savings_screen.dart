@@ -69,7 +69,9 @@ class _SavingsScreenState extends State<SavingsScreen> {
                   noteController: _noteController,
                   onMemberChanged: (value) => setState(() => _memberId = value),
                   onTypeChanged: (value) => setState(() => _type = value),
-                  onSubmit: _record,
+                  onSubmit: () {
+                    _record();
+                  },
                 ),
               ),
               SizedBox(width: isWide ? 16 : 0, height: isWide ? 0 : 16),
@@ -101,7 +103,7 @@ class _SavingsScreenState extends State<SavingsScreen> {
     );
   }
 
-  void _record() {
+  Future<void> _record() async {
     final app = AppScope.of(context);
     final amount = double.tryParse(_amountController.text.trim());
     if (_memberId == null || amount == null || amount <= 0) {
@@ -121,14 +123,23 @@ class _SavingsScreenState extends State<SavingsScreen> {
       return;
     }
 
-    app.savings.recordTransaction(
-      memberId: _memberId!,
-      type: _type,
-      amount: amount,
-      note: _noteController.text,
-    );
-    _amountController.clear();
-    _noteController.clear();
+    try {
+      await app.savings.recordTransaction(
+        memberId: _memberId!,
+        type: _type,
+        amount: amount,
+        note: _noteController.text,
+      );
+      _amountController.clear();
+      _noteController.clear();
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.toString())));
+    }
   }
 
   static String _money(double value) => 'PHP ${value.toStringAsFixed(2)}';

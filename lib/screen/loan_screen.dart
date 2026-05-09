@@ -48,7 +48,9 @@ class _LoanScreenState extends State<LoanScreen> {
               rateController: _rateController,
               termController: _termController,
               onMemberChanged: (value) => setState(() => _memberId = value),
-              onSubmit: _apply,
+              onSubmit: () {
+                _apply();
+              },
             ),
           ),
           SizedBox(width: isWide ? 16 : 0, height: isWide ? 0 : 16),
@@ -61,7 +63,7 @@ class _LoanScreenState extends State<LoanScreen> {
     );
   }
 
-  void _apply() {
+  Future<void> _apply() async {
     final principal = double.tryParse(_principalController.text.trim());
     final rate = double.tryParse(_rateController.text.trim());
     final term = int.tryParse(_termController.text.trim());
@@ -78,13 +80,22 @@ class _LoanScreenState extends State<LoanScreen> {
       return;
     }
 
-    AppScope.of(context).loans.addLoan(
-      memberId: _memberId!,
-      principal: principal,
-      annualInterestRate: rate / 100,
-      termMonths: term,
-    );
-    _principalController.clear();
+    try {
+      await AppScope.of(context).loans.addLoan(
+        memberId: _memberId!,
+        principal: principal,
+        annualInterestRate: rate / 100,
+        termMonths: term,
+      );
+      _principalController.clear();
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.toString())));
+    }
   }
 }
 
@@ -329,16 +340,38 @@ class _PendingLoanTile extends StatelessWidget {
               spacing: 8,
               children: [
                 FilledButton.icon(
-                  onPressed: () => AppScope.of(
-                    context,
-                  ).loans.updateStatus(loan.id, LoanStatus.approved),
+                  onPressed: () async {
+                    try {
+                      await AppScope.of(
+                        context,
+                      ).loans.updateStatus(loan.id, LoanStatus.approved);
+                    } catch (error) {
+                      if (!context.mounted) {
+                        return;
+                      }
+                      ScaffoldMessenger.of(
+                        context,
+                      ).showSnackBar(SnackBar(content: Text(error.toString())));
+                    }
+                  },
                   icon: const Icon(Icons.check),
                   label: const Text('Approve'),
                 ),
                 OutlinedButton.icon(
-                  onPressed: () => AppScope.of(
-                    context,
-                  ).loans.updateStatus(loan.id, LoanStatus.rejected),
+                  onPressed: () async {
+                    try {
+                      await AppScope.of(
+                        context,
+                      ).loans.updateStatus(loan.id, LoanStatus.rejected);
+                    } catch (error) {
+                      if (!context.mounted) {
+                        return;
+                      }
+                      ScaffoldMessenger.of(
+                        context,
+                      ).showSnackBar(SnackBar(content: Text(error.toString())));
+                    }
+                  },
                   icon: const Icon(Icons.close),
                   label: const Text('Reject'),
                 ),
@@ -477,7 +510,7 @@ class _ActiveLoanTile extends StatelessWidget {
                   child: const Text('Cancel'),
                 ),
                 FilledButton(
-                  onPressed: () {
+                  onPressed: () async {
                     final paymentAmount = mode == _PaymentMode.monthly
                         ? monthlyAmount
                         : double.tryParse(amountController.text.trim());
@@ -494,14 +527,25 @@ class _ActiveLoanTile extends StatelessWidget {
                       return;
                     }
 
-                    AppScope.of(context).loans.recordPayment(
-                      loanId: loan.id,
-                      amount: paymentAmount,
-                      note: noteController.text.trim().isEmpty
-                          ? mode.label
-                          : noteController.text,
-                    );
-                    Navigator.of(dialogContext).pop();
+                    try {
+                      await AppScope.of(context).loans.recordPayment(
+                        loanId: loan.id,
+                        amount: paymentAmount,
+                        note: noteController.text.trim().isEmpty
+                            ? mode.label
+                            : noteController.text,
+                      );
+                      if (dialogContext.mounted) {
+                        Navigator.of(dialogContext).pop();
+                      }
+                    } catch (error) {
+                      if (!context.mounted) {
+                        return;
+                      }
+                      ScaffoldMessenger.of(
+                        context,
+                      ).showSnackBar(SnackBar(content: Text(error.toString())));
+                    }
                   },
                   child: const Text('Save payment'),
                 ),

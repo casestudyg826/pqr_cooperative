@@ -13,6 +13,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _usernameController = TextEditingController(text: 'admin');
   final _passwordController = TextEditingController(text: 'admin123');
+  var _isSubmitting = false;
 
   @override
   void dispose() {
@@ -21,13 +22,20 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  void _submit() {
+  Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) {
       return;
     }
-    AppScope.of(
-      context,
-    ).auth.login(_usernameController.text, _passwordController.text);
+    setState(() => _isSubmitting = true);
+    try {
+      await AppScope.of(
+        context,
+      ).login(_usernameController.text, _passwordController.text);
+    } finally {
+      if (mounted) {
+        setState(() => _isSubmitting = false);
+      }
+    }
   }
 
   @override
@@ -56,8 +64,11 @@ class _LoginScreenState extends State<LoginScreen> {
                                 formKey: _formKey,
                                 usernameController: _usernameController,
                                 passwordController: _passwordController,
-                                onSubmit: _submit,
+                                onSubmit: () {
+                                  _submit();
+                                },
                                 errorMessage: app.auth.errorMessage,
+                                isSubmitting: _isSubmitting,
                               ),
                             ),
                           ],
@@ -71,8 +82,11 @@ class _LoginScreenState extends State<LoginScreen> {
                               formKey: _formKey,
                               usernameController: _usernameController,
                               passwordController: _passwordController,
-                              onSubmit: _submit,
+                              onSubmit: () {
+                                _submit();
+                              },
                               errorMessage: app.auth.errorMessage,
+                              isSubmitting: _isSubmitting,
                             ),
                           ],
                         ),
@@ -122,7 +136,7 @@ class _LoginIntro extends StatelessWidget {
         ),
         const SizedBox(height: 20),
         const Text(
-          'Digitize member records, savings activity, loan processing, repayments, and compliance reports in one local prototype.',
+          'Digitize member records, savings activity, loan processing, repayments, and compliance reports with a Supabase-backed system.',
         ),
         const SizedBox(height: 20),
         const _CredentialHint(
@@ -168,6 +182,7 @@ class _LoginForm extends StatelessWidget {
     required this.passwordController,
     required this.onSubmit,
     required this.errorMessage,
+    required this.isSubmitting,
   });
 
   final GlobalKey<FormState> formKey;
@@ -175,6 +190,7 @@ class _LoginForm extends StatelessWidget {
   final TextEditingController passwordController;
   final VoidCallback onSubmit;
   final String? errorMessage;
+  final bool isSubmitting;
 
   @override
   Widget build(BuildContext context) {
@@ -226,9 +242,9 @@ class _LoginForm extends StatelessWidget {
           const SizedBox(height: 20),
           FilledButton.icon(
             key: const Key('loginButton'),
-            onPressed: onSubmit,
+            onPressed: isSubmitting ? null : onSubmit,
             icon: const Icon(Icons.login),
-            label: const Text('Sign in'),
+            label: Text(isSubmitting ? 'Signing in...' : 'Sign in'),
           ),
         ],
       ),
