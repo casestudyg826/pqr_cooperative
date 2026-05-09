@@ -34,7 +34,7 @@ class _SettingsBackupScreenState extends State<SettingsBackupScreen> {
           ),
           const SizedBox(height: 8),
           const Text(
-            'This prototype simulates role-based access and backup status for the case study.',
+            'Role-based staff access and backup runs are stored in the backend.',
           ),
           const SizedBox(height: 20),
           LayoutBuilder(
@@ -60,16 +60,23 @@ class _SettingsBackupScreenState extends State<SettingsBackupScreen> {
                 title: 'Backup Status',
                 icon: Icons.backup_outlined,
                 children: [
-                  const _Line(label: 'Status', value: 'Prototype only'),
+                  _Line(
+                    label: 'Status',
+                    value: app.backupRuns.isEmpty
+                        ? 'No backend backup yet'
+                        : 'Last backup completed',
+                  ),
                   _Line(
                     label: 'Records included',
                     value:
                         '${summary.totalMembers} members, ${summary.activeLoans + summary.pendingLoans} active/pending loans',
                   ),
-                  const _Line(label: 'Storage', value: 'Not implemented yet'),
+                  const _Line(label: 'Storage', value: 'Supabase Postgres'),
                   const SizedBox(height: 12),
                   FilledButton.icon(
-                    onPressed: _runBackup,
+                    onPressed: () {
+                      _runBackup();
+                    },
                     icon: const Icon(Icons.cloud_done_outlined),
                     label: const Text('Run backup now'),
                   ),
@@ -106,10 +113,23 @@ class _SettingsBackupScreenState extends State<SettingsBackupScreen> {
     );
   }
 
-  void _runBackup() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Backup does nothing for now.')),
-    );
+  Future<void> _runBackup() async {
+    try {
+      final backup = await AppScope.of(context).runBackup();
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Backup completed: ${backup.id}')));
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.toString())));
+    }
   }
 
   Future<void> _showUserDialog(BuildContext context, {AppUser? user}) async {
@@ -119,9 +139,7 @@ class _SettingsBackupScreenState extends State<SettingsBackupScreen> {
     final usernameController = TextEditingController(
       text: user?.username ?? '',
     );
-    final passwordController = TextEditingController(
-      text: user?.password ?? '',
-    );
+    final passwordController = TextEditingController();
     final formKey = GlobalKey<FormState>();
     var role = user?.role ?? UserRole.administrator;
 
@@ -160,7 +178,12 @@ class _SettingsBackupScreenState extends State<SettingsBackupScreen> {
                         decoration: const InputDecoration(
                           labelText: 'Password',
                         ),
-                        validator: _required,
+                        validator: (value) {
+                          if (!isEdit) {
+                            return _required(value);
+                          }
+                          return null;
+                        },
                       ),
                       const SizedBox(height: 12),
                       DropdownButtonFormField<UserRole>(
@@ -192,25 +215,29 @@ class _SettingsBackupScreenState extends State<SettingsBackupScreen> {
                   child: const Text('Cancel'),
                 ),
                 FilledButton(
-                  onPressed: () {
+                  onPressed: () async {
                     if (!formKey.currentState!.validate()) {
                       return;
                     }
 
                     final success = isEdit
-                        ? app.auth.updateUser(
+                        ? await app.auth.updateUser(
                             id: user.id,
                             displayName: nameController.text,
                             username: usernameController.text,
                             password: passwordController.text,
                             role: role,
                           )
-                        : app.auth.addUser(
+                        : await app.auth.addUser(
                             displayName: nameController.text,
                             username: usernameController.text,
                             password: passwordController.text,
                             role: role,
                           );
+
+                    if (!context.mounted || !dialogContext.mounted) {
+                      return;
+                    }
 
                     if (!success) {
                       ScaffoldMessenger.of(context).showSnackBar(

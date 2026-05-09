@@ -41,7 +41,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
           ),
           IconButton(
             tooltip: 'Logout',
-            onPressed: app.auth.logout,
+            onPressed: app.logout,
             icon: const Icon(Icons.logout),
           ),
         ],

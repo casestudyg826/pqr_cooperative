@@ -1,42 +1,28 @@
 import 'package:flutter/foundation.dart';
 
+import '../backend/backend_api.dart';
 import '../module/loan.dart';
-import '../module/repayment.dart';
 
 class LoanController extends ChangeNotifier {
-  final List<Loan> _loans = [
-    Loan(
-      id: 'l001',
-      memberId: 'm001',
-      principal: 30000,
-      annualInterestRate: 0.12,
-      termMonths: 12,
-      appliedAt: DateTime(2025, 1, 20),
-      dueDate: DateTime(2026, 1, 20),
-      status: LoanStatus.approved,
-      repayments: [
-        Repayment(
-          id: 'r001',
-          loanId: 'l001',
-          amount: 7000,
-          date: DateTime(2025, 4, 2),
-          note: 'Partial repayment',
-        ),
-      ],
-    ),
-    Loan(
-      id: 'l002',
-      memberId: 'm002',
-      principal: 18000,
-      annualInterestRate: 0.1,
-      termMonths: 10,
-      appliedAt: DateTime(2025, 4, 5),
-      dueDate: DateTime(2026, 2, 5),
-      status: LoanStatus.pending,
-    ),
-  ];
+  LoanController(this._backend, this._sessionToken);
+
+  final BackendApi _backend;
+  final String Function() _sessionToken;
+  final List<Loan> _loans = [];
 
   List<Loan> get loans => List.unmodifiable(_loans.reversed);
+
+  void replaceAll(List<Loan> loans) {
+    _loans
+      ..clear()
+      ..addAll(loans);
+    notifyListeners();
+  }
+
+  List<Loan> loansForMember(String memberId) {
+    return _loans.reversed.where((loan) => loan.memberId == memberId).toList();
+  }
+
   int get pendingCount =>
       _loans.where((loan) => loan.status == LoanStatus.pending).length;
   int get activeCount => _loans
@@ -53,61 +39,60 @@ class LoanController extends ChangeNotifier {
   double get totalRepayments =>
       _loans.fold(0, (sum, loan) => sum + loan.totalPaid);
 
-  void addLoan({
+  Future<void> addLoan({
     required String memberId,
     required double principal,
     required double annualInterestRate,
     required int termMonths,
-  }) {
-    final now = DateTime.now();
-    _loans.add(
-      Loan(
-        id: 'l${now.microsecondsSinceEpoch}',
-        memberId: memberId,
-        principal: principal,
-        annualInterestRate: annualInterestRate,
-        termMonths: termMonths,
-        appliedAt: now,
-        dueDate: DateTime(now.year, now.month + termMonths, now.day),
-        status: LoanStatus.pending,
-      ),
+  }) async {
+    final loan = await _backend.addLoan(
+      _sessionToken(),
+      memberId: memberId,
+      principal: principal,
+      annualInterestRate: annualInterestRate,
+      termMonths: termMonths,
     );
+    _loans.add(loan);
     notifyListeners();
   }
 
-  void updateStatus(String loanId, LoanStatus status) {
+  Future<void> updateStatus(String loanId, LoanStatus status) async {
+    final updated = await _backend.updateLoanStatus(
+      _sessionToken(),
+      loanId: loanId,
+      status: status,
+    );
     final index = _loans.indexWhere((loan) => loan.id == loanId);
     if (index == -1) {
       return;
     }
-    _loans[index] = _loans[index].copyWith(status: status);
+    _loans[index] = updated.copyWith(repayments: _loans[index].repayments);
     notifyListeners();
   }
 
-  void recordPayment({
+  Future<void> recordPayment({
     required String loanId,
     required double amount,
     required String note,
-  }) {
+  }) async {
+    final result = await _backend.recordLoanPayment(
+      _sessionToken(),
+      loanId: loanId,
+      amount: amount,
+      note: note,
+    );
     final index = _loans.indexWhere((loan) => loan.id == loanId);
     if (index == -1) {
       return;
     }
 
-    final loan = _loans[index];
-    final repayment = Repayment(
-      id: 'r${DateTime.now().microsecondsSinceEpoch}',
-      loanId: loanId,
-      amount: amount,
-      date: DateTime.now(),
-      note: note.trim().isEmpty ? 'Loan repayment' : note.trim(),
-    );
-    final repayments = [...loan.repayments, repayment];
-    final updatedLoan = loan.copyWith(repayments: repayments);
-    final status = updatedLoan.outstandingBalance <= 0
-        ? LoanStatus.paid
-        : LoanStatus.approved;
-    _loans[index] = updatedLoan.copyWith(status: status);
+    final repayments = [..._loans[index].repayments, result.repayment];
+    _loans[index] = result.loan.copyWith(repayments: repayments);
+    notifyListeners();
+  }
+
+  void deleteLoansForMember(String memberId) {
+    _loans.removeWhere((loan) => loan.memberId == memberId);
     notifyListeners();
   }
 }

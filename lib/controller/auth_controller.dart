@@ -2,145 +2,115 @@ import 'dart:collection';
 
 import 'package:flutter/foundation.dart';
 
+import '../backend/backend_api.dart';
 import '../module/app_user.dart';
 
 class AuthController extends ChangeNotifier {
-  final List<AppUser> _users = [
-    const AppUser(
-      id: 'u001',
-      username: 'admin',
-      displayName: 'System Administrator',
-      password: 'admin123',
-      role: UserRole.administrator,
-    ),
-    const AppUser(
-      id: 'u002',
-      username: 'treasurer',
-      displayName: 'Cooperative Treasurer',
-      password: 'treasurer123',
-      role: UserRole.treasurer,
-    ),
-  ];
+  AuthController(this._backend, this._sessionToken);
+
+  final BackendApi _backend;
+  final String Function() _sessionToken;
+  final List<AppUser> _users = [];
 
   AppUser? _currentUser;
   String? _errorMessage;
+  String? _token;
 
   AppUser? get currentUser => _currentUser;
   String? get errorMessage => _errorMessage;
-  bool get isLoggedIn => _currentUser != null;
+  String? get sessionToken => _token;
+  bool get isLoggedIn => _currentUser != null && _token != null;
   UnmodifiableListView<AppUser> get users => UnmodifiableListView(_users);
 
-  bool login(String username, String password) {
-    final normalized = username.trim().toLowerCase();
-    AppUser? user;
-    for (final item in _users) {
-      if (item.username.toLowerCase() == normalized) {
-        user = item;
-        break;
-      }
-    }
-
-    if (user != null && user.password == password) {
-      _currentUser = user;
+  Future<bool> login(String username, String password) async {
+    try {
+      final result = await _backend.login(
+        username: username,
+        password: password,
+      );
+      _currentUser = result.user;
+      _token = result.token;
       _errorMessage = null;
       notifyListeners();
       return true;
+    } on BackendException catch (error) {
+      _errorMessage = error.message;
+    } catch (_) {
+      _errorMessage = 'Unable to sign in. Check the backend connection.';
     }
 
-    _errorMessage = 'Invalid username or password.';
+    _currentUser = null;
+    _token = null;
     notifyListeners();
     return false;
   }
 
-  bool addUser({
+  void replaceUsers(List<AppUser> users) {
+    _users
+      ..clear()
+      ..addAll(users);
+    notifyListeners();
+  }
+
+  Future<bool> addUser({
     required String displayName,
     required String username,
     required String password,
     required UserRole role,
-  }) {
-    final cleanUsername = username.trim();
-    final cleanDisplayName = displayName.trim();
-    final cleanPassword = password.trim();
-
-    if (cleanUsername.isEmpty ||
-        cleanDisplayName.isEmpty ||
-        cleanPassword.isEmpty) {
-      return false;
-    }
-    if (_usernameExists(cleanUsername)) {
-      return false;
-    }
-
-    _users.add(
-      AppUser(
-        id: 'u${DateTime.now().microsecondsSinceEpoch}',
-        username: cleanUsername,
-        displayName: cleanDisplayName,
-        password: cleanPassword,
+  }) async {
+    try {
+      final user = await _backend.addUser(
+        _sessionToken(),
+        displayName: displayName,
+        username: username,
+        password: password,
         role: role,
-      ),
-    );
-    notifyListeners();
-    return true;
+      );
+      _users.add(user);
+      notifyListeners();
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
-  bool updateUser({
+  Future<bool> updateUser({
     required String id,
     required String displayName,
     required String username,
     required String password,
     required UserRole role,
-  }) {
-    final cleanUsername = username.trim();
-    final cleanDisplayName = displayName.trim();
-    final cleanPassword = password.trim();
+  }) async {
+    try {
+      final updated = await _backend.updateUser(
+        _sessionToken(),
+        id: id,
+        displayName: displayName,
+        username: username,
+        password: password,
+        role: role,
+      );
+      final index = _users.indexWhere((user) => user.id == id);
+      if (index == -1) {
+        return false;
+      }
 
-    if (cleanUsername.isEmpty ||
-        cleanDisplayName.isEmpty ||
-        cleanPassword.isEmpty) {
+      _users[index] = updated;
+      if (_currentUser?.id == id) {
+        _currentUser = updated;
+      }
+      notifyListeners();
+      return true;
+    } catch (_) {
       return false;
     }
-
-    final index = _users.indexWhere((user) => user.id == id);
-    if (index == -1) {
-      return false;
-    }
-
-    if (_usernameExists(cleanUsername, excludeId: id)) {
-      return false;
-    }
-
-    final updated = _users[index].copyWith(
-      displayName: cleanDisplayName,
-      username: cleanUsername,
-      password: cleanPassword,
-      role: role,
-    );
-
-    _users[index] = updated;
-    if (_currentUser?.id == id) {
-      _currentUser = updated;
-    }
-    notifyListeners();
-    return true;
   }
 
   void logout() {
     _currentUser = null;
+    _token = null;
     _errorMessage = null;
+    _users.clear();
     notifyListeners();
-  }
-
-  bool _usernameExists(String username, {String? excludeId}) {
-    final normalized = username.toLowerCase();
-    for (final user in _users) {
-      if (excludeId != null && user.id == excludeId) {
-        continue;
-      }
-      if (user.username.toLowerCase() == normalized) {
-        return true;
-      }
-    }
-    return false;
   }
 }

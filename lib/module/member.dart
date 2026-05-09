@@ -37,4 +37,40 @@ class Member {
       status: status ?? this.status,
     );
   }
+
+  factory Member.fromJson(Map<String, dynamic> json) {
+    return Member(
+      id: json['id'].toString(),
+      memberCode: (json['member_code'] ?? json['memberCode']).toString(),
+      fullName: (json['full_name'] ?? json['fullName']).toString(),
+      address: json['address'].toString(),
+      phone: json['phone'].toString(),
+      joinedAt: DateTime.parse(
+        (json['joined_at'] ?? json['joinedAt']).toString(),
+      ),
+      status: _statusFromJson(json['status']),
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'member_code': memberCode,
+      'full_name': fullName,
+      'address': address,
+      'phone': phone,
+      'joined_at': joinedAt.toIso8601String(),
+      'status': status.name,
+    };
+  }
+
+  static MemberStatus _statusFromJson(Object? value) {
+    switch (value?.toString()) {
+      case 'active':
+        return MemberStatus.active;
+      case 'inactive':
+        return MemberStatus.inactive;
+    }
+    throw FormatException('Unknown member status: $value');
+  }
 }

@@ -229,7 +229,7 @@ class PdfReportController {
         ['Outstanding loan exposure', _money(summary.outstandingLoans)],
       ]),
       _sectionTitle('Submission Notes'),
-      pw.Bullet(text: 'Generated from the current local cooperative records.'),
+      pw.Bullet(text: 'Generated from the current cooperative records.'),
       pw.Bullet(
         text:
             'No online banking or external financial integration is included.',

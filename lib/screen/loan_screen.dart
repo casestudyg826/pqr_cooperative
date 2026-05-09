@@ -48,7 +48,9 @@ class _LoanScreenState extends State<LoanScreen> {
               rateController: _rateController,
               termController: _termController,
               onMemberChanged: (value) => setState(() => _memberId = value),
-              onSubmit: _apply,
+              onSubmit: () {
+                _apply();
+              },
             ),
           ),
           SizedBox(width: isWide ? 16 : 0, height: isWide ? 0 : 16),
@@ -61,7 +63,7 @@ class _LoanScreenState extends State<LoanScreen> {
     );
   }
 
-  void _apply() {
+  Future<void> _apply() async {
     final principal = double.tryParse(_principalController.text.trim());
     final rate = double.tryParse(_rateController.text.trim());
     final term = int.tryParse(_termController.text.trim());
@@ -78,13 +80,22 @@ class _LoanScreenState extends State<LoanScreen> {
       return;
     }
 
-    AppScope.of(context).loans.addLoan(
-      memberId: _memberId!,
-      principal: principal,
-      annualInterestRate: rate / 100,
-      termMonths: term,
-    );
-    _principalController.clear();
+    try {
+      await AppScope.of(context).loans.addLoan(
+        memberId: _memberId!,
+        principal: principal,
+        annualInterestRate: rate / 100,
+        termMonths: term,
+      );
+      _principalController.clear();
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.toString())));
+    }
   }
 }
 
@@ -177,24 +188,99 @@ class _LoanList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final app = AppScope.of(context);
+    final pendingLoans = app.loans.loans
+        .where((loan) => loan.status == LoanStatus.pending)
+        .toList();
+    final activeLoans = app.loans.loans
+        .where((loan) => loan.status == LoanStatus.approved)
+        .toList();
+    final closedLoans = app.loans.loans
+        .where(
+          (loan) =>
+              loan.status == LoanStatus.paid ||
+              loan.status == LoanStatus.rejected,
+        )
+        .toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _LoanSection(
+          title: 'Pending applications',
+          subtitle: 'Review loan requests before release.',
+          emptyMessage: 'No loan applications waiting for approval.',
+          children: [
+            for (final loan in pendingLoans)
+              _PendingLoanTile(
+                loan: loan,
+                memberName: app.members.nameFor(loan.memberId),
+              ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        _LoanSection(
+          title: 'Active loans',
+          subtitle: 'Track balances and record member repayments.',
+          emptyMessage: 'No active loans right now.',
+          children: [
+            for (final loan in activeLoans)
+              _ActiveLoanTile(
+                loan: loan,
+                memberName: app.members.nameFor(loan.memberId),
+              ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        _LoanSection(
+          title: 'Closed records',
+          subtitle: 'Paid and rejected loan records.',
+          emptyMessage: 'No closed loan records yet.',
+          children: [
+            for (final loan in closedLoans)
+              _ClosedLoanTile(
+                loan: loan,
+                memberName: app.members.nameFor(loan.memberId),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _LoanSection extends StatelessWidget {
+  const _LoanSection({
+    required this.title,
+    required this.subtitle,
+    required this.emptyMessage,
+    required this.children,
+  });
+
+  final String title;
+  final String subtitle;
+  final String emptyMessage;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              'Loan records',
+              title,
               style: Theme.of(
                 context,
               ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
             ),
-            const SizedBox(height: 12),
-            for (final loan in app.loans.loans)
-              _LoanTile(
-                loan: loan,
-                memberName: app.members.nameFor(loan.memberId),
-              ),
+            const SizedBox(height: 4),
+            Text(subtitle),
+            const SizedBox(height: 14),
+            if (children.isEmpty) Text(emptyMessage) else ...children,
           ],
         ),
       ),
@@ -202,15 +288,14 @@ class _LoanList extends StatelessWidget {
   }
 }
 
-class _LoanTile extends StatelessWidget {
-  const _LoanTile({required this.loan, required this.memberName});
+class _PendingLoanTile extends StatelessWidget {
+  const _PendingLoanTile({required this.loan, required this.memberName});
 
   final Loan loan;
   final String memberName;
 
   @override
   Widget build(BuildContext context) {
-    final app = AppScope.of(context);
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       child: Padding(
@@ -254,23 +339,42 @@ class _LoanTile extends StatelessWidget {
             Wrap(
               spacing: 8,
               children: [
-                if (loan.status == LoanStatus.pending) ...[
-                  OutlinedButton(
-                    onPressed: () =>
-                        app.loans.updateStatus(loan.id, LoanStatus.approved),
-                    child: const Text('Approve'),
-                  ),
-                  OutlinedButton(
-                    onPressed: () =>
-                        app.loans.updateStatus(loan.id, LoanStatus.rejected),
-                    child: const Text('Reject'),
-                  ),
-                ],
-                if (loan.status == LoanStatus.approved)
-                  FilledButton.tonal(
-                    onPressed: () => _showPaymentDialog(context, loan),
-                    child: const Text('Record payment'),
-                  ),
+                FilledButton.icon(
+                  onPressed: () async {
+                    try {
+                      await AppScope.of(
+                        context,
+                      ).loans.updateStatus(loan.id, LoanStatus.approved);
+                    } catch (error) {
+                      if (!context.mounted) {
+                        return;
+                      }
+                      ScaffoldMessenger.of(
+                        context,
+                      ).showSnackBar(SnackBar(content: Text(error.toString())));
+                    }
+                  },
+                  icon: const Icon(Icons.check),
+                  label: const Text('Approve'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: () async {
+                    try {
+                      await AppScope.of(
+                        context,
+                      ).loans.updateStatus(loan.id, LoanStatus.rejected);
+                    } catch (error) {
+                      if (!context.mounted) {
+                        return;
+                      }
+                      ScaffoldMessenger.of(
+                        context,
+                      ).showSnackBar(SnackBar(content: Text(error.toString())));
+                    }
+                  },
+                  icon: const Icon(Icons.close),
+                  label: const Text('Reject'),
+                ),
               ],
             ),
           ],
@@ -279,58 +383,175 @@ class _LoanTile extends StatelessWidget {
     );
   }
 
-  void _showPaymentDialog(BuildContext context, Loan loan) {
-    final amountController = TextEditingController(
-      text: loan.outstandingBalance.toStringAsFixed(2),
+  static String _money(double value) => 'PHP ${value.toStringAsFixed(2)}';
+  static String _date(DateTime value) =>
+      '${value.year}-${value.month.toString().padLeft(2, '0')}-${value.day.toString().padLeft(2, '0')}';
+}
+
+class _ActiveLoanTile extends StatelessWidget {
+  const _ActiveLoanTile({required this.loan, required this.memberName});
+
+  final Loan loan;
+  final String memberName;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Wrap(
+              spacing: 12,
+              runSpacing: 8,
+              children: [
+                Text(
+                  memberName,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                Chip(label: Text(loan.statusLabel)),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 18,
+              runSpacing: 8,
+              children: [
+                Text('Monthly due: ${_money(_monthlyDueFor(loan))}'),
+                Text('Paid: ${_money(loan.totalPaid)}'),
+                Text('Outstanding: ${_money(loan.outstandingBalance)}'),
+                Text('Due: ${_date(loan.dueDate)}'),
+              ],
+            ),
+            if (loan.repayments.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(
+                'Repayments: ${loan.repayments.map((item) => _money(item.amount)).join(', ')}',
+              ),
+            ],
+            const SizedBox(height: 10),
+            FilledButton.tonalIcon(
+              onPressed: () => _showPaymentDialog(context, loan),
+              icon: const Icon(Icons.payments_outlined),
+              label: const Text('Record payment'),
+            ),
+          ],
+        ),
+      ),
     );
+  }
+
+  void _showPaymentDialog(BuildContext context, Loan loan) {
+    final monthlyAmount = _monthlyDueFor(loan);
+    final amountController = TextEditingController();
     final noteController = TextEditingController();
+    var mode = _PaymentMode.monthly;
+
     showDialog<void>(
       context: context,
       builder: (dialogContext) {
-        return AlertDialog(
-          title: const Text('Record repayment'),
-          content: SizedBox(
-            width: 420,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: amountController,
-                  decoration: const InputDecoration(
-                    labelText: 'Amount',
-                    prefixText: 'PHP ',
-                  ),
-                  keyboardType: TextInputType.number,
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('Record repayment'),
+              content: SizedBox(
+                width: 460,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _PaymentSummary(loan: loan, monthlyAmount: monthlyAmount),
+                    const SizedBox(height: 14),
+                    SegmentedButton<_PaymentMode>(
+                      segments: const [
+                        ButtonSegment(
+                          value: _PaymentMode.monthly,
+                          icon: Icon(Icons.calendar_month_outlined),
+                          label: Text('Monthly'),
+                        ),
+                        ButtonSegment(
+                          value: _PaymentMode.custom,
+                          icon: Icon(Icons.edit_outlined),
+                          label: Text('Custom'),
+                        ),
+                      ],
+                      selected: {mode},
+                      onSelectionChanged: (selected) {
+                        setDialogState(() => mode = selected.first);
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    if (mode == _PaymentMode.monthly)
+                      _ReadOnlyAmount(value: monthlyAmount)
+                    else
+                      TextField(
+                        controller: amountController,
+                        decoration: const InputDecoration(
+                          labelText: 'Custom amount',
+                          prefixText: 'PHP ',
+                        ),
+                        keyboardType: TextInputType.number,
+                      ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: noteController,
+                      decoration: const InputDecoration(labelText: 'Note'),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: noteController,
-                  decoration: const InputDecoration(labelText: 'Note'),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () async {
+                    final paymentAmount = mode == _PaymentMode.monthly
+                        ? monthlyAmount
+                        : double.tryParse(amountController.text.trim());
+                    if (paymentAmount == null ||
+                        paymentAmount <= 0 ||
+                        paymentAmount > loan.outstandingBalance) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                            'Enter a valid amount within the outstanding balance.',
+                          ),
+                        ),
+                      );
+                      return;
+                    }
+
+                    try {
+                      await AppScope.of(context).loans.recordPayment(
+                        loanId: loan.id,
+                        amount: paymentAmount,
+                        note: noteController.text.trim().isEmpty
+                            ? mode.label
+                            : noteController.text,
+                      );
+                      if (dialogContext.mounted) {
+                        Navigator.of(dialogContext).pop();
+                      }
+                    } catch (error) {
+                      if (!context.mounted) {
+                        return;
+                      }
+                      ScaffoldMessenger.of(
+                        context,
+                      ).showSnackBar(SnackBar(content: Text(error.toString())));
+                    }
+                  },
+                  child: const Text('Save payment'),
                 ),
               ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () {
-                final amount = double.tryParse(amountController.text.trim());
-                if (amount == null || amount <= 0) {
-                  return;
-                }
-                AppScope.of(context).loans.recordPayment(
-                  loanId: loan.id,
-                  amount: amount,
-                  note: noteController.text,
-                );
-                Navigator.of(dialogContext).pop();
-              },
-              child: const Text('Save'),
-            ),
-          ],
+            );
+          },
         );
       },
     );
@@ -339,4 +560,118 @@ class _LoanTile extends StatelessWidget {
   static String _money(double value) => 'PHP ${value.toStringAsFixed(2)}';
   static String _date(DateTime value) =>
       '${value.year}-${value.month.toString().padLeft(2, '0')}-${value.day.toString().padLeft(2, '0')}';
+}
+
+class _ClosedLoanTile extends StatelessWidget {
+  const _ClosedLoanTile({required this.loan, required this.memberName});
+
+  final Loan loan;
+  final String memberName;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: const Icon(Icons.history_outlined),
+      title: Text(memberName),
+      subtitle: Text('${loan.statusLabel} • ${_date(loan.dueDate)}'),
+      trailing: Text(_money(loan.totalPayable)),
+    );
+  }
+
+  static String _money(double value) => 'PHP ${value.toStringAsFixed(2)}';
+  static String _date(DateTime value) =>
+      '${value.year}-${value.month.toString().padLeft(2, '0')}-${value.day.toString().padLeft(2, '0')}';
+}
+
+class _PaymentSummary extends StatelessWidget {
+  const _PaymentSummary({required this.loan, required this.monthlyAmount});
+
+  final Loan loan;
+  final double monthlyAmount;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        border: Border.all(color: const Color(0xFFE0E4DD)),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _PaymentLine(
+              label: 'Outstanding',
+              value: _money(loan.outstandingBalance),
+            ),
+            _PaymentLine(label: 'Monthly due', value: _money(monthlyAmount)),
+            _PaymentLine(label: 'Term', value: '${loan.termMonths} months'),
+          ],
+        ),
+      ),
+    );
+  }
+
+  static String _money(double value) => 'PHP ${value.toStringAsFixed(2)}';
+}
+
+class _PaymentLine extends StatelessWidget {
+  const _PaymentLine({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        children: [
+          Expanded(child: Text(label)),
+          Text(value, style: const TextStyle(fontWeight: FontWeight.w800)),
+        ],
+      ),
+    );
+  }
+}
+
+class _ReadOnlyAmount extends StatelessWidget {
+  const _ReadOnlyAmount({required this.value});
+
+  final double value;
+
+  @override
+  Widget build(BuildContext context) {
+    return InputDecorator(
+      decoration: const InputDecoration(
+        labelText: 'Payment amount',
+        prefixText: 'PHP ',
+      ),
+      child: Text(
+        value.toStringAsFixed(2),
+        style: Theme.of(
+          context,
+        ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+      ),
+    );
+  }
+}
+
+enum _PaymentMode {
+  monthly('Monthly loan repayment'),
+  custom('Custom loan repayment');
+
+  const _PaymentMode(this.label);
+
+  final String label;
+}
+
+double _monthlyDueFor(Loan loan) {
+  final scheduled = loan.totalPayable / loan.termMonths;
+  if (scheduled > loan.outstandingBalance) {
+    return loan.outstandingBalance;
+  }
+  return scheduled;
 }

@@ -69,7 +69,9 @@ class _SavingsScreenState extends State<SavingsScreen> {
                   noteController: _noteController,
                   onMemberChanged: (value) => setState(() => _memberId = value),
                   onTypeChanged: (value) => setState(() => _type = value),
-                  onSubmit: _record,
+                  onSubmit: () {
+                    _record();
+                  },
                 ),
               ),
               SizedBox(width: isWide ? 16 : 0, height: isWide ? 0 : 16),
@@ -101,7 +103,7 @@ class _SavingsScreenState extends State<SavingsScreen> {
     );
   }
 
-  void _record() {
+  Future<void> _record() async {
     final app = AppScope.of(context);
     final amount = double.tryParse(_amountController.text.trim());
     if (_memberId == null || amount == null || amount <= 0) {
@@ -121,14 +123,23 @@ class _SavingsScreenState extends State<SavingsScreen> {
       return;
     }
 
-    app.savings.recordTransaction(
-      memberId: _memberId!,
-      type: _type,
-      amount: amount,
-      note: _noteController.text,
-    );
-    _amountController.clear();
-    _noteController.clear();
+    try {
+      await app.savings.recordTransaction(
+        memberId: _memberId!,
+        type: _type,
+        amount: amount,
+        note: _noteController.text,
+      );
+      _amountController.clear();
+      _noteController.clear();
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.toString())));
+    }
   }
 
   static String _money(double value) => 'PHP ${value.toStringAsFixed(2)}';
@@ -266,7 +277,7 @@ class _SavingsAccountWorkspace extends StatelessWidget {
   }
 }
 
-class _SavingsAccountsPanel extends StatelessWidget {
+class _SavingsAccountsPanel extends StatefulWidget {
   const _SavingsAccountsPanel({
     required this.members,
     required this.selectedMemberId,
@@ -278,8 +289,31 @@ class _SavingsAccountsPanel extends StatelessWidget {
   final ValueChanged<String> onMemberSelected;
 
   @override
+  State<_SavingsAccountsPanel> createState() => _SavingsAccountsPanelState();
+}
+
+class _SavingsAccountsPanelState extends State<_SavingsAccountsPanel> {
+  final _searchController = TextEditingController();
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final app = AppScope.of(context);
+    final query = _searchController.text.trim().toLowerCase();
+    final filteredMembers = widget.members.where((member) {
+      if (query.isEmpty) {
+        return true;
+      }
+      return member.fullName.toLowerCase().contains(query) ||
+          member.memberCode.toLowerCase().contains(query) ||
+          member.phone.toLowerCase().contains(query);
+    }).toList();
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(18),
@@ -294,6 +328,15 @@ class _SavingsAccountsPanel extends StatelessWidget {
               ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
             ),
             const SizedBox(height: 12),
+            TextField(
+              controller: _searchController,
+              decoration: const InputDecoration(
+                hintText: 'Search accounts by name, code, or phone',
+                prefixIcon: Icon(Icons.search),
+              ),
+              onChanged: (_) => setState(() {}),
+            ),
+            const SizedBox(height: 12),
             LayoutBuilder(
               builder: (context, constraints) {
                 final columns = constraints.maxWidth >= 900
@@ -301,26 +344,48 @@ class _SavingsAccountsPanel extends StatelessWidget {
                     : constraints.maxWidth >= 600
                     ? 2
                     : 1;
-                return GridView.builder(
-                  itemCount: members.length,
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: columns,
-                    crossAxisSpacing: 10,
-                    mainAxisSpacing: 10,
-                    mainAxisExtent: 96,
+                const tileHeight = 96.0;
+                const spacing = 10.0;
+                final maxVisibleRows = columns == 1 ? 5 : 2;
+                final rows = (filteredMembers.length / columns).ceil();
+                final visibleRows = rows == 0
+                    ? 1
+                    : rows > maxVisibleRows
+                    ? maxVisibleRows
+                    : rows;
+                final gridHeight =
+                    (visibleRows * tileHeight) + ((visibleRows - 1) * spacing);
+
+                if (filteredMembers.isEmpty) {
+                  return const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 16),
+                    child: Text('No matching member accounts.'),
+                  );
+                }
+
+                return SizedBox(
+                  height: gridHeight,
+                  child: GridView.builder(
+                    itemCount: filteredMembers.length,
+                    padding: EdgeInsets.zero,
+                    physics: const ClampingScrollPhysics(),
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: columns,
+                      crossAxisSpacing: spacing,
+                      mainAxisSpacing: spacing,
+                      mainAxisExtent: tileHeight,
+                    ),
+                    itemBuilder: (context, index) {
+                      final member = filteredMembers[index];
+                      final isSelected = member.id == widget.selectedMemberId;
+                      return _SavingsAccountTile(
+                        member: member,
+                        balance: app.savings.balanceFor(member.id),
+                        isSelected: isSelected,
+                        onTap: () => widget.onMemberSelected(member.id),
+                      );
+                    },
                   ),
-                  itemBuilder: (context, index) {
-                    final member = members[index];
-                    final isSelected = member.id == selectedMemberId;
-                    return _SavingsAccountTile(
-                      member: member,
-                      balance: app.savings.balanceFor(member.id),
-                      isSelected: isSelected,
-                      onTap: () => onMemberSelected(member.id),
-                    );
-                  },
                 );
               },
             ),
