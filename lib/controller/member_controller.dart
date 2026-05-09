@@ -90,4 +90,14 @@ class MemberController extends ChangeNotifier {
     _members[index] = updatedMember;
     notifyListeners();
   }
+
+  bool deleteMember(String memberId) {
+    final removedCount = _members.length;
+    _members.removeWhere((member) => member.id == memberId);
+    final deleted = _members.length != removedCount;
+    if (deleted) {
+      notifyListeners();
+    }
+    return deleted;
+  }
 }

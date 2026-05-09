@@ -37,6 +37,10 @@ class LoanController extends ChangeNotifier {
   ];
 
   List<Loan> get loans => List.unmodifiable(_loans.reversed);
+  List<Loan> loansForMember(String memberId) {
+    return _loans.reversed.where((loan) => loan.memberId == memberId).toList();
+  }
+
   int get pendingCount =>
       _loans.where((loan) => loan.status == LoanStatus.pending).length;
   int get activeCount => _loans
@@ -108,6 +112,11 @@ class LoanController extends ChangeNotifier {
         ? LoanStatus.paid
         : LoanStatus.approved;
     _loans[index] = updatedLoan.copyWith(status: status);
+    notifyListeners();
+  }
+
+  void deleteLoansForMember(String memberId) {
+    _loans.removeWhere((loan) => loan.memberId == memberId);
     notifyListeners();
   }
 }

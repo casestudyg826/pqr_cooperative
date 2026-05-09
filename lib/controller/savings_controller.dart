@@ -76,4 +76,11 @@ class SavingsController extends ChangeNotifier {
     );
     notifyListeners();
   }
+
+  void deleteTransactionsForMember(String memberId) {
+    _transactions.removeWhere(
+      (transaction) => transaction.memberId == memberId,
+    );
+    notifyListeners();
+  }
 }
