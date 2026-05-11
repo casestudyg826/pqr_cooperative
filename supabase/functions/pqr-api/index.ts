@@ -706,6 +706,12 @@ function throwIfDb(error: any) {
 
   const message = `${error.message ?? ""}`;
   if (
+    message.includes("app_users_username_lower_key") ||
+    message.includes("duplicate key value violates unique constraint")
+  ) {
+    throw new ApiError("Username already exists.", 400);
+  }
+  if (
     message.includes("exceeds") ||
     message.includes("already exists") ||
     message.includes("duplicate key value") ||

@@ -470,8 +470,6 @@ class _SignUpForm extends StatelessWidget {
               labelText: 'Address',
               prefixIcon: Icon(Icons.location_on_outlined),
             ),
-            minLines: 2,
-            maxLines: 3,
             validator: _required,
           ),
           const SizedBox(height: 12),

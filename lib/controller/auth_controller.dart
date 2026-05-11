@@ -89,9 +89,16 @@ class AuthController extends ChangeNotifier {
         role: role,
       );
       _users.add(user);
+      _errorMessage = null;
       notifyListeners();
       return true;
+    } on BackendException catch (error) {
+      _errorMessage = error.message;
+      notifyListeners();
+      return false;
     } catch (_) {
+      _errorMessage = 'Unable to save user. Check the backend connection.';
+      notifyListeners();
       return false;
     }
   }
@@ -113,9 +120,16 @@ class AuthController extends ChangeNotifier {
         password: password,
       );
       _users.add(user);
+      _errorMessage = null;
       notifyListeners();
       return true;
+    } on BackendException catch (error) {
+      _errorMessage = error.message;
+      notifyListeners();
+      return false;
     } catch (_) {
+      _errorMessage = 'Unable to create member account.';
+      notifyListeners();
       return false;
     }
   }
@@ -145,9 +159,16 @@ class AuthController extends ChangeNotifier {
       if (_currentUser?.id == id) {
         _currentUser = updated;
       }
+      _errorMessage = null;
       notifyListeners();
       return true;
+    } on BackendException catch (error) {
+      _errorMessage = error.message;
+      notifyListeners();
+      return false;
     } catch (_) {
+      _errorMessage = 'Unable to update user.';
+      notifyListeners();
       return false;
     }
   }

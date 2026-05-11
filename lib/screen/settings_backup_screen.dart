@@ -241,13 +241,12 @@ class _SettingsBackupScreenState extends State<SettingsBackupScreen> {
                     }
 
                     if (!success) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text(
-                            'Unable to save user. Check fields or username uniqueness.',
-                          ),
-                        ),
-                      );
+                      final message =
+                          app.auth.errorMessage ??
+                          'Unable to save user. Check fields or username uniqueness.';
+                      ScaffoldMessenger.of(
+                        context,
+                      ).showSnackBar(SnackBar(content: Text(message)));
                       return;
                     }
 
@@ -309,8 +308,6 @@ class _SettingsBackupScreenState extends State<SettingsBackupScreen> {
                   TextFormField(
                     controller: addressController,
                     decoration: const InputDecoration(labelText: 'Address'),
-                    minLines: 2,
-                    maxLines: 3,
                     validator: _required,
                   ),
                   const SizedBox(height: 12),
@@ -371,13 +368,12 @@ class _SettingsBackupScreenState extends State<SettingsBackupScreen> {
                 }
 
                 if (!success) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text(
-                        'Unable to create member account. Check fields or username uniqueness.',
-                      ),
-                    ),
-                  );
+                  final message =
+                      app.auth.errorMessage ??
+                      'Unable to create member account. Check fields or username uniqueness.';
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(SnackBar(content: Text(message)));
                   return;
                 }
 
