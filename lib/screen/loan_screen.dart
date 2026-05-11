@@ -289,6 +289,8 @@ class _PendingLoanTile extends StatelessWidget {
               children: [
                 Text('Requested: ${_money(loan.principal)}'),
                 Text('Applied: ${_date(loan.appliedAt)}'),
+                if (loan.termMonths != null)
+                  Text('Requested term: ${loan.termMonths} months'),
               ],
             ),
             const SizedBox(height: 8),
@@ -328,7 +330,9 @@ class _PendingLoanTile extends StatelessWidget {
 
   void _showApprovalDialog(BuildContext context, Loan loan) {
     final rateController = TextEditingController(text: '12');
-    final termController = TextEditingController(text: '12');
+    final termController = TextEditingController(
+      text: (loan.termMonths ?? 12).toString(),
+    );
 
     showDialog<void>(
       context: context,

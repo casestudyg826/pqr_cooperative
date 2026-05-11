@@ -379,12 +379,14 @@ class MemoryBackendApi implements BackendApi {
     String sessionToken, {
     required String memberId,
     required double principal,
+    int? termMonths,
   }) async {
     final now = DateTime.now();
     final loan = Loan(
       id: 'l${now.microsecondsSinceEpoch}',
       memberId: memberId,
       principal: principal,
+      termMonths: termMonths,
       appliedAt: now,
       status: LoanStatus.pending,
     );

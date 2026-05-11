@@ -339,6 +339,7 @@ async function loansRoute(
     const insert = {
       member_id: memberId,
       principal: requiredPositiveNumber(body.principal, "Principal is required."),
+      term_months: optionalInteger(body.term_months, "Term must be a whole number of months."),
       applied_at: new Date().toISOString(),
       status: "pending",
     };
@@ -764,6 +765,13 @@ function requiredInteger(value: unknown, message: string) {
     throw new ApiError(message);
   }
   return numberValue;
+}
+
+function optionalInteger(value: unknown, message: string) {
+  if (value === undefined || value === null || value === "") {
+    return null;
+  }
+  return requiredInteger(value, message);
 }
 
 function routeParts(req: Request) {

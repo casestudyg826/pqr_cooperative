@@ -132,11 +132,59 @@ void main() {
     await tester.tap(find.byKey(const Key('signupButton')));
     await tester.pumpAndSettle();
 
-    expect(find.text('My Account'), findsWidgets);
+    expect(find.text('Current Savings Balance'), findsOneWidget);
+    expect(find.text('Savings'), findsWidgets);
+    expect(find.text('Loans'), findsWidgets);
+    expect(find.text('History'), findsWidgets);
     expect(find.text('Members'), findsNothing);
-    expect(find.text('Savings'), findsNothing);
     expect(find.text('Reports'), findsNothing);
     expect(find.text('Backup'), findsNothing);
+  });
+
+  testWidgets('member loan and history pages show requested controls', (
+    tester,
+  ) async {
+    configureDesktopView(tester);
+    await tester.pumpWidget(buildTestApp());
+
+    await tester.tap(find.text('Sign up'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const Key('signupFullNameField')),
+      'Mila Torres',
+    );
+    await tester.enterText(
+      find.byKey(const Key('signupPhoneField')),
+      '0917 909 0000',
+    );
+    await tester.enterText(
+      find.byKey(const Key('signupAddressField')),
+      'Cebu City',
+    );
+    await tester.enterText(
+      find.byKey(const Key('signupUsernameField')),
+      'mila.member',
+    );
+    await tester.enterText(
+      find.byKey(const Key('signupPasswordField')),
+      'password123',
+    );
+    await tester.enterText(
+      find.byKey(const Key('signupConfirmPasswordField')),
+      'password123',
+    );
+    await tester.tap(find.byKey(const Key('signupButton')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Loans').last);
+    await tester.pumpAndSettle();
+    expect(find.text('Preferred term'), findsOneWidget);
+    expect(find.text('Loan Status'), findsOneWidget);
+
+    await tester.tap(find.text('History').last);
+    await tester.pumpAndSettle();
+    expect(find.text('Export Transactions PDF'), findsOneWidget);
+    expect(find.text('Activity Timeline'), findsOneWidget);
   });
 
   testWidgets('administrator can log in and see dashboard', (tester) async {

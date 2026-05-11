@@ -178,6 +178,7 @@ abstract class BackendApi {
     String sessionToken, {
     required String memberId,
     required double principal,
+    int? termMonths,
   });
 
   Future<Loan> updateLoanStatus(

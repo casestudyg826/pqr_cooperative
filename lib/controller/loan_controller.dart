@@ -42,11 +42,13 @@ class LoanController extends ChangeNotifier {
   Future<void> addLoan({
     required String memberId,
     required double principal,
+    int? termMonths,
   }) async {
     final loan = await _backend.addLoan(
       _sessionToken(),
       memberId: memberId,
       principal: principal,
+      termMonths: termMonths,
     );
     _loans.add(loan);
     notifyListeners();

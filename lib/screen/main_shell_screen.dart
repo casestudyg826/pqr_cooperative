@@ -4,7 +4,9 @@ import '../controller/app_controller.dart';
 import '../module/app_user.dart';
 import 'dashboard_screen.dart';
 import 'loan_screen.dart';
-import 'member_portal_screen.dart';
+import 'member_history_screen.dart';
+import 'member_loans_screen.dart';
+import 'member_savings_screen.dart';
 import 'member_screen.dart';
 import 'reports_screen.dart';
 import 'savings_screen.dart';
@@ -95,10 +97,22 @@ class _MainShellScreenState extends State<MainShellScreen> {
     if (role == UserRole.member) {
       return const [
         _NavItem(
-          label: 'My Account',
-          icon: Icons.account_circle_outlined,
-          selectedIcon: Icons.account_circle,
-          screen: MemberPortalScreen(),
+          label: 'Savings',
+          icon: Icons.account_balance_wallet_outlined,
+          selectedIcon: Icons.account_balance_wallet,
+          screen: MemberSavingsScreen(),
+        ),
+        _NavItem(
+          label: 'Loans',
+          icon: Icons.request_quote_outlined,
+          selectedIcon: Icons.request_quote,
+          screen: MemberLoansScreen(),
+        ),
+        _NavItem(
+          label: 'History',
+          icon: Icons.history_outlined,
+          selectedIcon: Icons.history,
+          screen: MemberHistoryScreen(),
         ),
       ];
     }

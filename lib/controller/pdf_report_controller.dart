@@ -57,6 +57,69 @@ class PdfReportController {
     return document.save();
   }
 
+  Future<Uint8List> buildMemberTransactionsReport({
+    required String memberName,
+    required String memberCode,
+    required List<SavingsTransaction> savingsTransactions,
+    required List<Loan> loans,
+  }) async {
+    final document = pw.Document();
+    final totalDeposits = savingsTransactions
+        .where((item) => item.type == SavingsTransactionType.contribution)
+        .fold<double>(0, (sum, item) => sum + item.amount);
+    final totalWithdrawals = savingsTransactions
+        .where((item) => item.type == SavingsTransactionType.withdrawal)
+        .fold<double>(0, (sum, item) => sum + item.amount);
+    final savingsBalance = savingsTransactions.fold<double>(
+      0,
+      (sum, item) => sum + item.signedAmount,
+    );
+    final repayments = loans.expand((loan) => loan.repayments).toList();
+
+    document.addPage(
+      pw.MultiPage(
+        pageTheme: pw.PageTheme(
+          margin: const pw.EdgeInsets.all(36),
+          theme: pw.ThemeData.withFont(
+            base: pw.Font.helvetica(),
+            bold: pw.Font.helveticaBold(),
+          ),
+        ),
+        header: (context) => _memberHistoryHeader(memberName, memberCode),
+        footer: (context) => _footer(context),
+        build: (context) => [
+          _sectionTitle('Account Summary'),
+          _keyValueTable([
+            ['Current savings balance', _money(savingsBalance)],
+            ['Total deposits', _money(totalDeposits)],
+            ['Total withdrawals', _money(totalWithdrawals)],
+            ['Loan applications', '${loans.length}'],
+            ['Loan repayments', '${repayments.length}'],
+          ]),
+          _sectionTitle('Savings Transactions'),
+          _table(
+            headers: ['Date', 'Type', 'Amount', 'Note'],
+            rows: savingsTransactions.map((transaction) {
+              return [
+                _date(transaction.date),
+                transaction.typeLabel,
+                _money(transaction.signedAmount),
+                transaction.note,
+              ];
+            }).toList(),
+          ),
+          _sectionTitle('Loan Activity'),
+          _table(
+            headers: ['Date', 'Event', 'Details', 'Amount'],
+            rows: _memberLoanActivityRows(loans),
+          ),
+        ],
+      ),
+    );
+
+    return document.save();
+  }
+
   pw.Widget _header(ReportDefinition definition) {
     return pw.Container(
       padding: const pw.EdgeInsets.only(bottom: 16),
@@ -89,6 +152,33 @@ class PdfReportController {
       child: pw.Text(
         'Page ${context.pageNumber} of ${context.pagesCount}',
         style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey700),
+      ),
+    );
+  }
+
+  pw.Widget _memberHistoryHeader(String memberName, String memberCode) {
+    return pw.Container(
+      padding: const pw.EdgeInsets.only(bottom: 16),
+      decoration: const pw.BoxDecoration(
+        border: pw.Border(
+          bottom: pw.BorderSide(color: PdfColors.grey400, width: 0.5),
+        ),
+      ),
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Text(
+            'PQR Cooperative',
+            style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold),
+          ),
+          pw.SizedBox(height: 4),
+          pw.Text(
+            'Member Transaction History',
+            style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold),
+          ),
+          pw.Text('$memberName • $memberCode'),
+          pw.Text('Generated ${_dateTime(DateTime.now())}'),
+        ],
       ),
     );
   }
@@ -311,6 +401,57 @@ class PdfReportController {
       cellAlignment: pw.Alignment.centerLeft,
       cellPadding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 5),
     );
+  }
+
+  List<List<String>> _memberLoanActivityRows(List<Loan> loans) {
+    final rows = <List<String>>[];
+    for (final loan in loans) {
+      rows.add([
+        _date(loan.appliedAt),
+        'Application submitted',
+        loan.termMonths == null
+            ? loan.statusLabel
+            : 'Requested ${loan.termMonths} months',
+        _money(loan.principal),
+      ]);
+      if (loan.approvedAt != null) {
+        rows.add([
+          _date(loan.approvedAt!),
+          'Loan approved',
+          loan.termMonths == null
+              ? 'Terms pending'
+              : '${loan.termMonths} months at ${((loan.annualInterestRate ?? 0) * 100).toStringAsFixed(2)}%',
+          _money(loan.totalPayable),
+        ]);
+      }
+      if (loan.status == LoanStatus.rejected) {
+        rows.add([
+          _date(loan.appliedAt),
+          'Application rejected',
+          'Rejected after review',
+          _money(loan.principal),
+        ]);
+      }
+      for (final repayment in loan.repayments) {
+        rows.add([
+          _date(repayment.date),
+          'Repayment',
+          repayment.note,
+          _money(repayment.amount),
+        ]);
+      }
+      if (loan.status == LoanStatus.paid && loan.repayments.isNotEmpty) {
+        rows.add([
+          _date(loan.repayments.last.date),
+          'Loan paid',
+          'Outstanding balance cleared',
+          _money(loan.totalPayable),
+        ]);
+      }
+    }
+
+    rows.sort((a, b) => b[0].compareTo(a[0]));
+    return rows;
   }
 
   static String _money(double value) => 'PHP ${value.toStringAsFixed(2)}';

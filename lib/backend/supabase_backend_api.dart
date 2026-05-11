@@ -225,12 +225,17 @@ class SupabaseBackendApi implements BackendApi {
     String sessionToken, {
     required String memberId,
     required double principal,
+    int? termMonths,
   }) async {
     final data = await _request(
       'POST',
       'loans',
       sessionToken: sessionToken,
-      body: {'member_id': memberId, 'principal': principal},
+      body: {
+        'member_id': memberId,
+        'principal': principal,
+        ...?termMonths == null ? null : {'term_months': termMonths},
+      },
     );
     return Loan.fromJson(data);
   }
