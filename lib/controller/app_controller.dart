@@ -42,15 +42,29 @@ class AppController extends ChangeNotifier {
       return false;
     }
 
-    final snapshot = await backend.bootstrap(_requireSessionToken());
-    auth.replaceUsers(snapshot.users);
-    members.replaceAll(snapshot.members);
-    savings.replaceAll(snapshot.savingsTransactions);
-    loans.replaceAll(snapshot.loans);
-    _backupRuns
-      ..clear()
-      ..addAll(snapshot.backupRuns);
-    notifyListeners();
+    await _loadAuthenticatedSnapshot();
+    return true;
+  }
+
+  Future<bool> signUpMember({
+    required String fullName,
+    required String address,
+    required String phone,
+    required String username,
+    required String password,
+  }) async {
+    final signedUp = await auth.signUpMember(
+      fullName: fullName,
+      address: address,
+      phone: phone,
+      username: username,
+      password: password,
+    );
+    if (!signedUp) {
+      return false;
+    }
+
+    await _loadAuthenticatedSnapshot();
     return true;
   }
 
@@ -73,6 +87,18 @@ class AppController extends ChangeNotifier {
     _backupRuns.insert(0, backup);
     notifyListeners();
     return backup;
+  }
+
+  Future<void> _loadAuthenticatedSnapshot() async {
+    final snapshot = await backend.bootstrap(_requireSessionToken());
+    auth.replaceUsers(snapshot.users);
+    members.replaceAll(snapshot.members);
+    savings.replaceAll(snapshot.savingsTransactions);
+    loans.replaceAll(snapshot.loans);
+    _backupRuns
+      ..clear()
+      ..addAll(snapshot.backupRuns);
+    notifyListeners();
   }
 
   String _requireSessionToken() {

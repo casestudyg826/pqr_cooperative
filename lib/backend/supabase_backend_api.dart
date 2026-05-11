@@ -57,6 +57,31 @@ class SupabaseBackendApi implements BackendApi {
   }
 
   @override
+  Future<AuthResult> signUpMember({
+    required String fullName,
+    required String address,
+    required String phone,
+    required String username,
+    required String password,
+  }) async {
+    final data = await _request(
+      'POST',
+      'signup',
+      body: {
+        'full_name': fullName,
+        'address': address,
+        'phone': phone,
+        'username': username,
+        'password': password,
+      },
+    );
+    return AuthResult(
+      token: data['token'].toString(),
+      user: AppUser.fromJson(Map<String, dynamic>.from(data['user'] as Map)),
+    );
+  }
+
+  @override
   Future<void> logout(String sessionToken) async {
     await _request('POST', 'logout', sessionToken: sessionToken);
   }
@@ -176,19 +201,12 @@ class SupabaseBackendApi implements BackendApi {
     String sessionToken, {
     required String memberId,
     required double principal,
-    required double annualInterestRate,
-    required int termMonths,
   }) async {
     final data = await _request(
       'POST',
       'loans',
       sessionToken: sessionToken,
-      body: {
-        'member_id': memberId,
-        'principal': principal,
-        'annual_interest_rate': annualInterestRate,
-        'term_months': termMonths,
-      },
+      body: {'member_id': memberId, 'principal': principal},
     );
     return Loan.fromJson(data);
   }
@@ -198,12 +216,20 @@ class SupabaseBackendApi implements BackendApi {
     String sessionToken, {
     required String loanId,
     required LoanStatus status,
+    double? annualInterestRate,
+    int? termMonths,
   }) async {
     final data = await _request(
       'PATCH',
       'loans/$loanId/status',
       sessionToken: sessionToken,
-      body: {'status': status.name},
+      body: {
+        'status': status.name,
+        ...?annualInterestRate == null
+            ? null
+            : {'annual_interest_rate': annualInterestRate},
+        ...?termMonths == null ? null : {'term_months': termMonths},
+      },
     );
     return Loan.fromJson(data);
   }

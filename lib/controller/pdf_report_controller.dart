@@ -189,7 +189,7 @@ class PdfReportController {
             _money(loan.interest),
             _money(loan.totalPaid),
             _money(loan.outstandingBalance),
-            _date(loan.dueDate),
+            loan.dueDate == null ? 'Not set' : _date(loan.dueDate!),
           ];
         }).toList(),
       ),

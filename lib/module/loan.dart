@@ -7,10 +7,11 @@ class Loan {
     required this.id,
     required this.memberId,
     required this.principal,
-    required this.annualInterestRate,
-    required this.termMonths,
+    this.annualInterestRate,
+    this.termMonths,
     required this.appliedAt,
-    required this.dueDate,
+    this.dueDate,
+    this.approvedAt,
     required this.status,
     this.repayments = const [],
   });
@@ -18,14 +19,21 @@ class Loan {
   final String id;
   final String memberId;
   final double principal;
-  final double annualInterestRate;
-  final int termMonths;
+  final double? annualInterestRate;
+  final int? termMonths;
   final DateTime appliedAt;
-  final DateTime dueDate;
+  final DateTime? dueDate;
+  final DateTime? approvedAt;
   final LoanStatus status;
   final List<Repayment> repayments;
 
-  double get interest => principal * annualInterestRate * (termMonths / 12);
+  double get interest {
+    if (annualInterestRate == null || termMonths == null) {
+      return 0;
+    }
+    return principal * annualInterestRate! * (termMonths! / 12);
+  }
+
   double get totalPayable => principal + interest;
   double get totalPaid => repayments.fold(0, (sum, item) => sum + item.amount);
   double get outstandingBalance {
@@ -36,7 +44,8 @@ class Loan {
   bool get isOverdue {
     return status == LoanStatus.approved &&
         outstandingBalance > 0 &&
-        dueDate.isBefore(DateTime.now());
+        dueDate != null &&
+        dueDate!.isBefore(DateTime.now());
   }
 
   String get statusLabel {
@@ -52,15 +61,23 @@ class Loan {
     }
   }
 
-  Loan copyWith({LoanStatus? status, List<Repayment>? repayments}) {
+  Loan copyWith({
+    LoanStatus? status,
+    List<Repayment>? repayments,
+    double? annualInterestRate,
+    int? termMonths,
+    DateTime? dueDate,
+    DateTime? approvedAt,
+  }) {
     return Loan(
       id: id,
       memberId: memberId,
       principal: principal,
-      annualInterestRate: annualInterestRate,
-      termMonths: termMonths,
+      annualInterestRate: annualInterestRate ?? this.annualInterestRate,
+      termMonths: termMonths ?? this.termMonths,
       appliedAt: appliedAt,
-      dueDate: dueDate,
+      dueDate: dueDate ?? this.dueDate,
+      approvedAt: approvedAt ?? this.approvedAt,
       status: status ?? this.status,
       repayments: repayments ?? this.repayments,
     );
@@ -74,14 +91,15 @@ class Loan {
       id: json['id'].toString(),
       memberId: (json['member_id'] ?? json['memberId']).toString(),
       principal: _toDouble(json['principal']),
-      annualInterestRate: _toDouble(
+      annualInterestRate: _toNullableDouble(
         json['annual_interest_rate'] ?? json['annualInterestRate'],
       ),
-      termMonths: _toInt(json['term_months'] ?? json['termMonths']),
+      termMonths: _toNullableInt(json['term_months'] ?? json['termMonths']),
       appliedAt: DateTime.parse(
         (json['applied_at'] ?? json['appliedAt']).toString(),
       ),
-      dueDate: DateTime.parse((json['due_date'] ?? json['dueDate']).toString()),
+      dueDate: _toNullableDate(json['due_date'] ?? json['dueDate']),
+      approvedAt: _toNullableDate(json['approved_at'] ?? json['approvedAt']),
       status: _statusFromJson(json['status']),
       repayments: repayments,
     );
@@ -95,7 +113,8 @@ class Loan {
       'annual_interest_rate': annualInterestRate,
       'term_months': termMonths,
       'applied_at': appliedAt.toIso8601String(),
-      'due_date': dueDate.toIso8601String(),
+      'due_date': dueDate?.toIso8601String(),
+      'approved_at': approvedAt?.toIso8601String(),
       'status': status.name,
       'repayments': repayments.map((repayment) => repayment.toJson()).toList(),
     };
@@ -130,5 +149,26 @@ class Loan {
       return value.toInt();
     }
     return int.parse(value.toString());
+  }
+
+  static double? _toNullableDouble(Object? value) {
+    if (value == null) {
+      return null;
+    }
+    return _toDouble(value);
+  }
+
+  static int? _toNullableInt(Object? value) {
+    if (value == null) {
+      return null;
+    }
+    return _toInt(value);
+  }
+
+  static DateTime? _toNullableDate(Object? value) {
+    if (value == null) {
+      return null;
+    }
+    return DateTime.parse(value.toString());
   }
 }

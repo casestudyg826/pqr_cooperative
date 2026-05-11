@@ -4,6 +4,7 @@ import '../controller/app_controller.dart';
 import '../module/app_user.dart';
 import 'dashboard_screen.dart';
 import 'loan_screen.dart';
+import 'member_portal_screen.dart';
 import 'member_screen.dart';
 import 'reports_screen.dart';
 import 'savings_screen.dart';
@@ -91,6 +92,17 @@ class _MainShellScreenState extends State<MainShellScreen> {
   }
 
   List<_NavItem> _itemsFor(UserRole role) {
+    if (role == UserRole.member) {
+      return const [
+        _NavItem(
+          label: 'My Account',
+          icon: Icons.account_circle_outlined,
+          selectedIcon: Icons.account_circle,
+          screen: MemberPortalScreen(),
+        ),
+      ];
+    }
+
     final base = <_NavItem>[
       const _NavItem(
         label: 'Dashboard',

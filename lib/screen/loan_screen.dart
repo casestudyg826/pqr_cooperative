@@ -12,15 +12,11 @@ class LoanScreen extends StatefulWidget {
 
 class _LoanScreenState extends State<LoanScreen> {
   final _principalController = TextEditingController();
-  final _rateController = TextEditingController(text: '12');
-  final _termController = TextEditingController(text: '12');
   String? _memberId = 'm001';
 
   @override
   void dispose() {
     _principalController.dispose();
-    _rateController.dispose();
-    _termController.dispose();
     super.dispose();
   }
 
@@ -45,19 +41,15 @@ class _LoanScreenState extends State<LoanScreen> {
             child: _LoanForm(
               memberId: _memberId,
               principalController: _principalController,
-              rateController: _rateController,
-              termController: _termController,
               onMemberChanged: (value) => setState(() => _memberId = value),
-              onSubmit: () {
-                _apply();
-              },
+              onSubmit: _apply,
             ),
           ),
           SizedBox(width: isWide ? 16 : 0, height: isWide ? 0 : 16),
           if (isWide)
-            Expanded(child: _LoanList())
+            Expanded(child: const _LoanList())
           else
-            SizedBox(width: double.infinity, child: _LoanList()),
+            const SizedBox(width: double.infinity, child: _LoanList()),
         ],
       ),
     );
@@ -65,15 +57,7 @@ class _LoanScreenState extends State<LoanScreen> {
 
   Future<void> _apply() async {
     final principal = double.tryParse(_principalController.text.trim());
-    final rate = double.tryParse(_rateController.text.trim());
-    final term = int.tryParse(_termController.text.trim());
-    if (_memberId == null ||
-        principal == null ||
-        principal <= 0 ||
-        rate == null ||
-        rate < 0 ||
-        term == null ||
-        term <= 0) {
+    if (_memberId == null || principal == null || principal <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Enter valid loan application details.')),
       );
@@ -81,12 +65,9 @@ class _LoanScreenState extends State<LoanScreen> {
     }
 
     try {
-      await AppScope.of(context).loans.addLoan(
-        memberId: _memberId!,
-        principal: principal,
-        annualInterestRate: rate / 100,
-        termMonths: term,
-      );
+      await AppScope.of(
+        context,
+      ).loans.addLoan(memberId: _memberId!, principal: principal);
       _principalController.clear();
     } catch (error) {
       if (!mounted) {
@@ -103,16 +84,12 @@ class _LoanForm extends StatelessWidget {
   const _LoanForm({
     required this.memberId,
     required this.principalController,
-    required this.rateController,
-    required this.termController,
     required this.onMemberChanged,
     required this.onSubmit,
   });
 
   final String? memberId;
   final TextEditingController principalController;
-  final TextEditingController rateController;
-  final TextEditingController termController;
   final ValueChanged<String?> onMemberChanged;
   final VoidCallback onSubmit;
 
@@ -131,6 +108,10 @@ class _LoanForm extends StatelessWidget {
                 context,
               ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
             ),
+            const SizedBox(height: 8),
+            const Text(
+              'Submit amount requests. Interest rate and term are set during approval.',
+            ),
             const SizedBox(height: 16),
             DropdownButtonFormField<String>(
               initialValue: memberId,
@@ -148,26 +129,8 @@ class _LoanForm extends StatelessWidget {
             TextField(
               controller: principalController,
               decoration: const InputDecoration(
-                labelText: 'Principal',
+                labelText: 'Requested amount',
                 prefixText: 'PHP ',
-              ),
-              keyboardType: TextInputType.number,
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: rateController,
-              decoration: const InputDecoration(
-                labelText: 'Annual interest rate',
-                suffixText: '%',
-              ),
-              keyboardType: TextInputType.number,
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: termController,
-              decoration: const InputDecoration(
-                labelText: 'Term',
-                suffixText: 'months',
               ),
               keyboardType: TextInputType.number,
             ),
@@ -185,6 +148,8 @@ class _LoanForm extends StatelessWidget {
 }
 
 class _LoanList extends StatelessWidget {
+  const _LoanList();
+
   @override
   Widget build(BuildContext context) {
     final app = AppScope.of(context);
@@ -322,38 +287,16 @@ class _PendingLoanTile extends StatelessWidget {
               spacing: 18,
               runSpacing: 8,
               children: [
-                Text('Principal: ${_money(loan.principal)}'),
-                Text('Interest: ${_money(loan.interest)}'),
-                Text('Paid: ${_money(loan.totalPaid)}'),
-                Text('Outstanding: ${_money(loan.outstandingBalance)}'),
-                Text('Due: ${_date(loan.dueDate)}'),
+                Text('Requested: ${_money(loan.principal)}'),
+                Text('Applied: ${_date(loan.appliedAt)}'),
               ],
             ),
-            if (loan.repayments.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Text(
-                'Repayments: ${loan.repayments.map((item) => _money(item.amount)).join(', ')}',
-              ),
-            ],
             const SizedBox(height: 8),
             Wrap(
               spacing: 8,
               children: [
                 FilledButton.icon(
-                  onPressed: () async {
-                    try {
-                      await AppScope.of(
-                        context,
-                      ).loans.updateStatus(loan.id, LoanStatus.approved);
-                    } catch (error) {
-                      if (!context.mounted) {
-                        return;
-                      }
-                      ScaffoldMessenger.of(
-                        context,
-                      ).showSnackBar(SnackBar(content: Text(error.toString())));
-                    }
-                  },
+                  onPressed: () => _showApprovalDialog(context, loan),
                   icon: const Icon(Icons.check),
                   label: const Text('Approve'),
                 ),
@@ -383,9 +326,84 @@ class _PendingLoanTile extends StatelessWidget {
     );
   }
 
-  static String _money(double value) => 'PHP ${value.toStringAsFixed(2)}';
-  static String _date(DateTime value) =>
-      '${value.year}-${value.month.toString().padLeft(2, '0')}-${value.day.toString().padLeft(2, '0')}';
+  void _showApprovalDialog(BuildContext context, Loan loan) {
+    final rateController = TextEditingController(text: '12');
+    final termController = TextEditingController(text: '12');
+
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Approve loan'),
+          content: SizedBox(
+            width: 420,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: rateController,
+                  decoration: const InputDecoration(
+                    labelText: 'Annual interest rate',
+                    suffixText: '%',
+                  ),
+                  keyboardType: TextInputType.number,
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: termController,
+                  decoration: const InputDecoration(
+                    labelText: 'Term',
+                    suffixText: 'months',
+                  ),
+                  keyboardType: TextInputType.number,
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () async {
+                final rate = double.tryParse(rateController.text.trim());
+                final term = int.tryParse(termController.text.trim());
+                if (rate == null || rate < 0 || term == null || term <= 0) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Enter valid approval details.'),
+                    ),
+                  );
+                  return;
+                }
+
+                try {
+                  await AppScope.of(context).loans.updateStatus(
+                    loan.id,
+                    LoanStatus.approved,
+                    annualInterestRate: rate / 100,
+                    termMonths: term,
+                  );
+                  if (dialogContext.mounted) {
+                    Navigator.of(dialogContext).pop();
+                  }
+                } catch (error) {
+                  if (!context.mounted) {
+                    return;
+                  }
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(SnackBar(content: Text(error.toString())));
+                }
+              },
+              child: const Text('Approve'),
+            ),
+          ],
+        );
+      },
+    );
+  }
 }
 
 class _ActiveLoanTile extends StatelessWidget {
@@ -424,7 +442,11 @@ class _ActiveLoanTile extends StatelessWidget {
                 Text('Monthly due: ${_money(_monthlyDueFor(loan))}'),
                 Text('Paid: ${_money(loan.totalPaid)}'),
                 Text('Outstanding: ${_money(loan.outstandingBalance)}'),
-                Text('Due: ${_date(loan.dueDate)}'),
+                Text(
+                  loan.dueDate == null
+                      ? 'Due: Not set'
+                      : 'Due: ${_date(loan.dueDate!)}',
+                ),
               ],
             ),
             if (loan.repayments.isNotEmpty) ...[
@@ -556,10 +578,6 @@ class _ActiveLoanTile extends StatelessWidget {
       },
     );
   }
-
-  static String _money(double value) => 'PHP ${value.toStringAsFixed(2)}';
-  static String _date(DateTime value) =>
-      '${value.year}-${value.month.toString().padLeft(2, '0')}-${value.day.toString().padLeft(2, '0')}';
 }
 
 class _ClosedLoanTile extends StatelessWidget {
@@ -574,14 +592,14 @@ class _ClosedLoanTile extends StatelessWidget {
       contentPadding: EdgeInsets.zero,
       leading: const Icon(Icons.history_outlined),
       title: Text(memberName),
-      subtitle: Text('${loan.statusLabel} • ${_date(loan.dueDate)}'),
+      subtitle: Text(
+        loan.dueDate == null
+            ? loan.statusLabel
+            : '${loan.statusLabel} • ${_date(loan.dueDate!)}',
+      ),
       trailing: Text(_money(loan.totalPayable)),
     );
   }
-
-  static String _money(double value) => 'PHP ${value.toStringAsFixed(2)}';
-  static String _date(DateTime value) =>
-      '${value.year}-${value.month.toString().padLeft(2, '0')}-${value.day.toString().padLeft(2, '0')}';
 }
 
 class _PaymentSummary extends StatelessWidget {
@@ -607,14 +625,17 @@ class _PaymentSummary extends StatelessWidget {
               value: _money(loan.outstandingBalance),
             ),
             _PaymentLine(label: 'Monthly due', value: _money(monthlyAmount)),
-            _PaymentLine(label: 'Term', value: '${loan.termMonths} months'),
+            _PaymentLine(
+              label: 'Term',
+              value: loan.termMonths == null
+                  ? 'Not set'
+                  : '${loan.termMonths} months',
+            ),
           ],
         ),
       ),
     );
   }
-
-  static String _money(double value) => 'PHP ${value.toStringAsFixed(2)}';
 }
 
 class _PaymentLine extends StatelessWidget {
@@ -668,8 +689,16 @@ enum _PaymentMode {
   final String label;
 }
 
+String _money(double value) => 'PHP ${value.toStringAsFixed(2)}';
+
+String _date(DateTime value) =>
+    '${value.year}-${value.month.toString().padLeft(2, '0')}-${value.day.toString().padLeft(2, '0')}';
+
 double _monthlyDueFor(Loan loan) {
-  final scheduled = loan.totalPayable / loan.termMonths;
+  if (loan.termMonths == null || loan.termMonths == 0) {
+    return loan.outstandingBalance;
+  }
+  final scheduled = loan.totalPayable / loan.termMonths!;
   if (scheduled > loan.outstandingBalance) {
     return loan.outstandingBalance;
   }

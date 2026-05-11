@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 
+type UserRole = "administrator" | "treasurer" | "member";
 type StaffRole = "administrator" | "treasurer";
 
 type SessionContext = {
@@ -8,7 +9,8 @@ type SessionContext = {
     id: string;
     username: string;
     display_name: string;
-    role: StaffRole;
+    role: UserRole;
+    member_id: string | null;
   };
 };
 
@@ -47,6 +49,10 @@ Deno.serve(async (req: Request) => {
       return json(await login(req));
     }
 
+    if (req.method === "POST" && route[0] === "signup") {
+      return json(await signUp(req));
+    }
+
     const session = await requireSession(req);
 
     if (req.method === "POST" && route[0] === "logout") {
@@ -54,7 +60,7 @@ Deno.serve(async (req: Request) => {
     }
 
     if (req.method === "GET" && route[0] === "bootstrap") {
-      return json(await bootstrap());
+      return json(await bootstrap(session));
     }
 
     if (route[0] === "members") {
@@ -113,6 +119,24 @@ async function login(req: Request) {
   return { token: row.token, user: row.user_record };
 }
 
+async function signUp(req: Request) {
+  const body = await readJson(req);
+  const { data, error } = await supabase.rpc("pqr_member_signup", {
+    p_full_name: requiredString(body.full_name, "Full name is required."),
+    p_address: requiredString(body.address, "Address is required."),
+    p_phone: requiredString(body.phone, "Phone is required."),
+    p_username: requiredString(body.username, "Username is required."),
+    p_password: requiredString(body.password, "Password is required."),
+  });
+
+  throwIfDb(error);
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row?.token || !row?.user_record) {
+    throw new ApiError("Sign up did not return a session.", 500);
+  }
+  return { token: row.token, user: row.user_record };
+}
+
 async function logout(session: SessionContext) {
   const { error } = await supabase
     .from("app_sessions")
@@ -124,22 +148,20 @@ async function logout(session: SessionContext) {
   return { ok: true };
 }
 
-async function bootstrap() {
-  const [
-    users,
-    members,
-    savingsTransactions,
-    loans,
-    repayments,
-    backupRuns,
-  ] = await Promise.all([
-    selectAll("app_users", "created_at", true),
-    selectAll("members", "member_code"),
-    selectAll("savings_transactions", "occurred_at", false),
-    selectAll("loans", "applied_at", false),
-    selectAll("repayments", "paid_at", false),
-    selectAll("backup_runs", "created_at", false),
-  ]);
+async function bootstrap(session: SessionContext) {
+  if (session.user.role === "member") {
+    return await memberBootstrap(session);
+  }
+
+  const [users, members, savingsTransactions, loans, repayments, backupRuns] =
+    await Promise.all([
+      selectAll("app_users", "created_at", true),
+      selectAll("members", "member_code"),
+      selectAll("savings_transactions", "occurred_at", false),
+      selectAll("loans", "applied_at", false),
+      selectAll("repayments", "paid_at", false),
+      selectAll("backup_runs", "created_at", false),
+    ]);
 
   return {
     users: users.map(publicUser),
@@ -151,16 +173,50 @@ async function bootstrap() {
   };
 }
 
+async function memberBootstrap(session: SessionContext) {
+  const memberId = session.user.member_id;
+  if (!memberId) {
+    throw new ApiError("Member account is not linked.", 403);
+  }
+
+  const [members, savingsTransactions, loans, users] = await Promise.all([
+    selectBy("members", "id", memberId, "member_code"),
+    selectBy("savings_transactions", "member_id", memberId, "occurred_at", false),
+    selectBy("loans", "member_id", memberId, "applied_at", false),
+    selectBy("app_users", "id", session.user.id, "created_at", true),
+  ]);
+
+  const loanIds = loans.map((loan: any) => loan.id).filter(Boolean);
+  const repayments = loanIds.length > 0
+    ? await selectIn("repayments", "loan_id", loanIds, "paid_at", false)
+    : [];
+
+  return {
+    users: users.map(publicUser),
+    members,
+    savings_transactions: savingsTransactions,
+    loans,
+    repayments,
+    backup_runs: [],
+  };
+}
+
 async function membersRoute(
   req: Request,
   route: string[],
   session: SessionContext,
 ) {
   if (req.method === "GET") {
+    if (session.user.role === "member") {
+      if (!session.user.member_id) {
+        return [];
+      }
+      return await selectBy("members", "id", session.user.member_id, "member_code");
+    }
     return await selectAll("members", "member_code");
   }
 
-  requireRole(session, "administrator");
+  requireAdministrator(session);
 
   if (req.method === "POST" && route.length === 1) {
     const body = await readJson(req);
@@ -219,16 +275,29 @@ async function membersRoute(
 
 async function savingsRoute(req: Request, session: SessionContext) {
   if (req.method === "GET") {
+    if (session.user.role === "member") {
+      if (!session.user.member_id) {
+        return [];
+      }
+      return await selectBy(
+        "savings_transactions",
+        "member_id",
+        session.user.member_id,
+        "occurred_at",
+        false,
+      );
+    }
     return await selectAll("savings_transactions", "occurred_at", false);
   }
 
   if (req.method === "POST") {
+    requireStaff(session);
     const body = await readJson(req);
     const { data, error } = await supabase.rpc("record_savings_transaction", {
       p_actor_id: session.user.id,
       p_member_id: requiredString(body.member_id, "Member is required."),
       p_type: requiredString(body.type, "Transaction type is required."),
-      p_amount: requiredNumber(body.amount, "Amount is required."),
+      p_amount: requiredPositiveNumber(body.amount, "Amount is required."),
       p_note: `${body.note ?? ""}`,
     });
 
@@ -245,26 +314,28 @@ async function loansRoute(
   session: SessionContext,
 ) {
   if (req.method === "GET" && route.length === 1) {
+    if (session.user.role === "member") {
+      if (!session.user.member_id) {
+        return [];
+      }
+      return await selectBy("loans", "member_id", session.user.member_id, "applied_at", false);
+    }
     return await selectAll("loans", "applied_at", false);
   }
 
   if (req.method === "POST" && route.length === 1) {
     const body = await readJson(req);
-    const now = new Date();
-    const termMonths = requiredInteger(body.term_months, "Term is required.");
-    const dueDate = new Date(now);
-    dueDate.setMonth(dueDate.getMonth() + termMonths);
+    const memberId = session.user.role === "member"
+      ? session.user.member_id
+      : requiredString(body.member_id, "Member is required.");
+    if (!memberId) {
+      throw new ApiError("Member account is not linked.", 403);
+    }
 
     const insert = {
-      member_id: requiredString(body.member_id, "Member is required."),
-      principal: requiredNumber(body.principal, "Principal is required."),
-      annual_interest_rate: requiredNumber(
-        body.annual_interest_rate,
-        "Interest rate is required.",
-      ),
-      term_months: termMonths,
-      applied_at: now.toISOString(),
-      due_date: dueDate.toISOString(),
+      member_id: memberId,
+      principal: requiredPositiveNumber(body.principal, "Principal is required."),
+      applied_at: new Date().toISOString(),
       status: "pending",
     };
 
@@ -280,32 +351,48 @@ async function loansRoute(
   }
 
   if (route.length === 3 && route[2] === "status" && req.method === "PATCH") {
+    requireStaff(session);
     const body = await readJson(req);
     const status = requiredString(body.status, "Status is required.");
     if (!["pending", "approved", "paid", "rejected"].includes(status)) {
       throw new ApiError("Invalid loan status.");
     }
 
+    const updates: Record<string, unknown> = { status };
+    if (status === "approved") {
+      const annualInterestRate = requiredNonNegativeNumber(
+        body.annual_interest_rate,
+        "Interest rate is required.",
+      );
+      const termMonths = requiredInteger(body.term_months, "Term is required.");
+      const approvedAt = new Date();
+      const dueDate = new Date(approvedAt);
+      dueDate.setMonth(dueDate.getMonth() + termMonths);
+      updates.annual_interest_rate = annualInterestRate;
+      updates.term_months = termMonths;
+      updates.approved_at = approvedAt.toISOString();
+      updates.due_date = dueDate.toISOString();
+    }
+
     const { data, error } = await supabase
       .from("loans")
-      .update({ status })
+      .update(updates)
       .eq("id", route[1])
       .select()
       .single();
 
     throwIfDb(error);
-    await audit(session.user.id, "update_loan_status", "loans", route[1], {
-      status,
-    });
+    await audit(session.user.id, "update_loan_status", "loans", route[1], updates);
     return data;
   }
 
   if (route.length === 3 && route[2] === "repayments" && req.method === "POST") {
+    requireStaff(session);
     const body = await readJson(req);
     const { data, error } = await supabase.rpc("record_loan_repayment", {
       p_actor_id: session.user.id,
       p_loan_id: route[1],
-      p_amount: requiredNumber(body.amount, "Amount is required."),
+      p_amount: requiredPositiveNumber(body.amount, "Amount is required."),
       p_note: `${body.note ?? ""}`,
     });
 
@@ -321,12 +408,12 @@ async function usersRoute(
   route: string[],
   session: SessionContext,
 ) {
+  requireAdministrator(session);
+
   if (req.method === "GET") {
     const users = await selectAll("app_users", "created_at", true);
     return users.map(publicUser);
   }
-
-  requireRole(session, "administrator");
 
   if (req.method === "POST" && route.length === 1) {
     const body = await readJson(req);
@@ -362,6 +449,8 @@ async function usersRoute(
 }
 
 async function backupsRoute(req: Request, session: SessionContext) {
+  requireStaff(session);
+
   if (req.method === "GET") {
     return await selectAll("backup_runs", "created_at", false);
   }
@@ -413,7 +502,9 @@ async function requireSession(req: Request): Promise<SessionContext> {
   const tokenHash = await sha256Hex(token);
   const { data, error } = await supabase
     .from("app_sessions")
-    .select("token_hash, expires_at, revoked_at, user:app_users(id, username, display_name, role, is_active)")
+    .select(
+      "token_hash, expires_at, revoked_at, user:app_users(id, username, display_name, role, member_id, is_active)",
+    )
     .eq("token_hash", tokenHash)
     .maybeSingle();
 
@@ -441,6 +532,7 @@ async function requireSession(req: Request): Promise<SessionContext> {
       username: user.username,
       display_name: user.display_name,
       role: user.role,
+      member_id: user.member_id ?? null,
     },
   };
 }
@@ -449,6 +541,40 @@ async function selectAll(table: string, order: string, ascending = true) {
   const { data, error } = await supabase
     .from(table)
     .select("*")
+    .order(order, { ascending });
+
+  throwIfDb(error);
+  return data ?? [];
+}
+
+async function selectBy(
+  table: string,
+  column: string,
+  value: string,
+  order: string,
+  ascending = true,
+) {
+  const { data, error } = await supabase
+    .from(table)
+    .select("*")
+    .eq(column, value)
+    .order(order, { ascending });
+
+  throwIfDb(error);
+  return data ?? [];
+}
+
+async function selectIn(
+  table: string,
+  column: string,
+  values: string[],
+  order: string,
+  ascending = true,
+) {
+  const { data, error } = await supabase
+    .from(table)
+    .select("*")
+    .in(column, values)
     .order(order, { ascending });
 
   throwIfDb(error);
@@ -481,15 +607,24 @@ function publicUser(user: any) {
     username: user.username,
     display_name: user.display_name,
     role: user.role,
+    member_id: user.member_id,
     is_active: user.is_active,
     created_at: user.created_at,
     updated_at: user.updated_at,
   };
 }
 
-function requireRole(session: SessionContext, role: StaffRole) {
-  if (session.user.role !== role) {
+function requireAdministrator(session: SessionContext) {
+  if (session.user.role !== "administrator") {
     throw new ApiError("Administrator access is required.", 403);
+  }
+}
+
+function requireStaff(session: SessionContext): asserts session is SessionContext & {
+  user: SessionContext["user"] & { role: StaffRole };
+} {
+  if (session.user.role === "member") {
+    throw new ApiError("Staff access is required.", 403);
   }
 }
 
@@ -498,7 +633,13 @@ function throwIfDb(error: any) {
     return;
   }
 
-  if (`${error.message ?? ""}`.includes("exceeds")) {
+  const message = `${error.message ?? ""}`;
+  if (
+    message.includes("exceeds") ||
+    message.includes("already exists") ||
+    message.includes("duplicate key value") ||
+    error.code === "P0001"
+  ) {
     throw new ApiError(error.message, 400);
   }
 
@@ -524,7 +665,7 @@ function requiredString(value: unknown, message: string) {
   return value.trim();
 }
 
-function requiredNumber(value: unknown, message: string) {
+function requiredPositiveNumber(value: unknown, message: string) {
   const numberValue = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(numberValue) || numberValue <= 0) {
     throw new ApiError(message);
@@ -532,8 +673,16 @@ function requiredNumber(value: unknown, message: string) {
   return numberValue;
 }
 
+function requiredNonNegativeNumber(value: unknown, message: string) {
+  const numberValue = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(numberValue) || numberValue < 0) {
+    throw new ApiError(message);
+  }
+  return numberValue;
+}
+
 function requiredInteger(value: unknown, message: string) {
-  const numberValue = requiredNumber(value, message);
+  const numberValue = requiredPositiveNumber(value, message);
   if (!Number.isInteger(numberValue)) {
     throw new ApiError(message);
   }

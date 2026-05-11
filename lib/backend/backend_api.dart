@@ -117,6 +117,14 @@ abstract class BackendApi {
     required String password,
   });
 
+  Future<AuthResult> signUpMember({
+    required String fullName,
+    required String address,
+    required String phone,
+    required String username,
+    required String password,
+  });
+
   Future<void> logout(String sessionToken);
 
   Future<BackendSnapshot> bootstrap(String sessionToken);
@@ -161,14 +169,14 @@ abstract class BackendApi {
     String sessionToken, {
     required String memberId,
     required double principal,
-    required double annualInterestRate,
-    required int termMonths,
   });
 
   Future<Loan> updateLoanStatus(
     String sessionToken, {
     required String loanId,
     required LoanStatus status,
+    double? annualInterestRate,
+    int? termMonths,
   });
 
   Future<LoanRepaymentResult> recordLoanPayment(

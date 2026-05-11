@@ -143,16 +143,66 @@ class MemoryBackendApi implements BackendApi {
   }
 
   @override
+  Future<AuthResult> signUpMember({
+    required String fullName,
+    required String address,
+    required String phone,
+    required String username,
+    required String password,
+  }) async {
+    final cleanUsername = username.trim().toLowerCase();
+    if (cleanUsername.isEmpty || password.trim().isEmpty) {
+      throw const BackendException('Username and password are required.');
+    }
+    if (_users.any((user) => user.username.toLowerCase() == cleanUsername)) {
+      throw const BackendException('Username already exists.');
+    }
+
+    final member = await addMember(
+      'memory-signup',
+      fullName: fullName,
+      address: address,
+      phone: phone,
+    );
+    final user = AppUser(
+      id: 'u${DateTime.now().microsecondsSinceEpoch}',
+      username: cleanUsername,
+      displayName: member.fullName,
+      role: UserRole.member,
+      memberId: member.id,
+    );
+    _users.add(user);
+    _passwords[cleanUsername] = password.trim();
+    return AuthResult(token: 'memory-token-${user.id}', user: user);
+  }
+
+  @override
   Future<void> logout(String sessionToken) async {}
 
   @override
   Future<BackendSnapshot> bootstrap(String sessionToken) async {
+    final user = _userForToken(sessionToken);
+    final isMember = user.role == UserRole.member && user.memberId != null;
+    final memberIds = isMember ? {user.memberId!} : <String>{};
+    final members = isMember
+        ? _members.where((member) => member.id == user.memberId).toList()
+        : _members;
+    final savingsTransactions = isMember
+        ? _savingsTransactions
+              .where((transaction) => memberIds.contains(transaction.memberId))
+              .toList()
+        : _savingsTransactions;
+    final loans = isMember
+        ? _loans.where((loan) => memberIds.contains(loan.memberId)).toList()
+        : _loans;
+    final visibleUsers = isMember ? [user] : _users;
+
     return BackendSnapshot(
-      users: List.unmodifiable(_users),
-      members: List.unmodifiable(_members),
-      savingsTransactions: List.unmodifiable(_savingsTransactions),
-      loans: List.unmodifiable(_loans),
-      repayments: List.unmodifiable(_loans.expand((loan) => loan.repayments)),
+      users: List.unmodifiable(visibleUsers),
+      members: List.unmodifiable(members),
+      savingsTransactions: List.unmodifiable(savingsTransactions),
+      loans: List.unmodifiable(loans),
+      repayments: List.unmodifiable(loans.expand((loan) => loan.repayments)),
       backupRuns: List.unmodifiable(_backupRuns),
     );
   }
@@ -292,18 +342,13 @@ class MemoryBackendApi implements BackendApi {
     String sessionToken, {
     required String memberId,
     required double principal,
-    required double annualInterestRate,
-    required int termMonths,
   }) async {
     final now = DateTime.now();
     final loan = Loan(
       id: 'l${now.microsecondsSinceEpoch}',
       memberId: memberId,
       principal: principal,
-      annualInterestRate: annualInterestRate,
-      termMonths: termMonths,
       appliedAt: now,
-      dueDate: DateTime(now.year, now.month + termMonths, now.day),
       status: LoanStatus.pending,
     );
     _loans.add(loan);
@@ -315,12 +360,35 @@ class MemoryBackendApi implements BackendApi {
     String sessionToken, {
     required String loanId,
     required LoanStatus status,
+    double? annualInterestRate,
+    int? termMonths,
   }) async {
     final index = _loans.indexWhere((loan) => loan.id == loanId);
     if (index == -1) {
       throw const BackendException('Loan was not found.');
     }
-    final loan = _loans[index].copyWith(status: status);
+    final current = _loans[index];
+    Loan loan;
+    if (status == LoanStatus.approved) {
+      if (annualInterestRate == null || annualInterestRate < 0) {
+        throw const BackendException(
+          'A valid annual interest rate is required.',
+        );
+      }
+      if (termMonths == null || termMonths <= 0) {
+        throw const BackendException('A valid term in months is required.');
+      }
+      final now = DateTime.now();
+      loan = current.copyWith(
+        status: status,
+        annualInterestRate: annualInterestRate,
+        termMonths: termMonths,
+        approvedAt: now,
+        dueDate: DateTime(now.year, now.month + termMonths, now.day),
+      );
+    } else {
+      loan = current.copyWith(status: status);
+    }
     _loans[index] = loan;
     return loan;
   }
@@ -382,5 +450,19 @@ class MemoryBackendApi implements BackendApi {
     return _savingsTransactions
         .where((transaction) => transaction.memberId == memberId)
         .fold(0, (sum, transaction) => sum + transaction.signedAmount);
+  }
+
+  AppUser _userForToken(String token) {
+    final prefix = 'memory-token-';
+    if (!token.startsWith(prefix)) {
+      throw const BackendException('Please sign in again.');
+    }
+    final userId = token.substring(prefix.length);
+    for (final user in _users) {
+      if (user.id == userId) {
+        return user;
+      }
+    }
+    throw const BackendException('Please sign in again.');
   }
 }

@@ -42,25 +42,28 @@ class LoanController extends ChangeNotifier {
   Future<void> addLoan({
     required String memberId,
     required double principal,
-    required double annualInterestRate,
-    required int termMonths,
   }) async {
     final loan = await _backend.addLoan(
       _sessionToken(),
       memberId: memberId,
       principal: principal,
-      annualInterestRate: annualInterestRate,
-      termMonths: termMonths,
     );
     _loans.add(loan);
     notifyListeners();
   }
 
-  Future<void> updateStatus(String loanId, LoanStatus status) async {
+  Future<void> updateStatus(
+    String loanId,
+    LoanStatus status, {
+    double? annualInterestRate,
+    int? termMonths,
+  }) async {
     final updated = await _backend.updateLoanStatus(
       _sessionToken(),
       loanId: loanId,
       status: status,
+      annualInterestRate: annualInterestRate,
+      termMonths: termMonths,
     );
     final index = _loans.indexWhere((loan) => loan.id == loanId);
     if (index == -1) {

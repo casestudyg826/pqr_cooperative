@@ -28,10 +28,7 @@ class AuthController extends ChangeNotifier {
         username: username,
         password: password,
       );
-      _currentUser = result.user;
-      _token = result.token;
-      _errorMessage = null;
-      notifyListeners();
+      _setAuthenticated(result);
       return true;
     } on BackendException catch (error) {
       _errorMessage = error.message;
@@ -39,9 +36,34 @@ class AuthController extends ChangeNotifier {
       _errorMessage = 'Unable to sign in. Check the backend connection.';
     }
 
-    _currentUser = null;
-    _token = null;
-    notifyListeners();
+    _clearSessionOnError();
+    return false;
+  }
+
+  Future<bool> signUpMember({
+    required String fullName,
+    required String address,
+    required String phone,
+    required String username,
+    required String password,
+  }) async {
+    try {
+      final result = await _backend.signUpMember(
+        fullName: fullName,
+        address: address,
+        phone: phone,
+        username: username,
+        password: password,
+      );
+      _setAuthenticated(result);
+      return true;
+    } on BackendException catch (error) {
+      _errorMessage = error.message;
+    } catch (_) {
+      _errorMessage = 'Unable to sign up. Check the backend connection.';
+    }
+
+    _clearSessionOnError();
     return false;
   }
 
@@ -111,6 +133,19 @@ class AuthController extends ChangeNotifier {
     _token = null;
     _errorMessage = null;
     _users.clear();
+    notifyListeners();
+  }
+
+  void _setAuthenticated(AuthResult result) {
+    _currentUser = result.user;
+    _token = result.token;
+    _errorMessage = null;
+    notifyListeners();
+  }
+
+  void _clearSessionOnError() {
+    _currentUser = null;
+    _token = null;
     notifyListeners();
   }
 }

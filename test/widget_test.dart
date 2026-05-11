@@ -61,12 +61,7 @@ void main() {
         amount: 500,
         note: 'Backend deposit',
       );
-      await app.loans.addLoan(
-        memberId: 'm003',
-        principal: 10000,
-        annualInterestRate: 0.12,
-        termMonths: 12,
-      );
+      await app.loans.addLoan(memberId: 'm003', principal: 10000);
 
       expect(app.savings.balanceFor('m001'), 13500);
       expect(
@@ -76,12 +71,72 @@ void main() {
     },
   );
 
+  test('member signup creates linked member account and scoped data', () async {
+    final app = AppController(backend: MemoryBackendApi.seeded());
+
+    final signedUp = await app.signUpMember(
+      fullName: 'Paolo Ramos',
+      address: 'Cebu City',
+      phone: '0917 333 0000',
+      username: 'paolo.member',
+      password: 'password123',
+    );
+
+    expect(signedUp, isTrue);
+    expect(app.auth.currentUser?.role, isNotNull);
+    expect(app.auth.currentUser?.isMember, isTrue);
+    expect(app.auth.currentUser?.memberId, isNotNull);
+    expect(app.members.members, hasLength(1));
+    expect(app.members.members.single.fullName, 'Paolo Ramos');
+  });
+
   testWidgets('app launches to login screen', (tester) async {
     await tester.pumpWidget(buildTestApp());
 
     expect(find.text('PQR Cooperative'), findsOneWidget);
     expect(find.text('Sign in'), findsWidgets);
     expect(find.byKey(const Key('loginButton')), findsOneWidget);
+  });
+
+  testWidgets('member can sign up and sees member-only portal', (tester) async {
+    configureDesktopView(tester);
+    await tester.pumpWidget(buildTestApp());
+
+    await tester.tap(find.text('Sign up'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const Key('signupFullNameField')),
+      'Paolo Ramos',
+    );
+    await tester.enterText(
+      find.byKey(const Key('signupPhoneField')),
+      '0917 333 0000',
+    );
+    await tester.enterText(
+      find.byKey(const Key('signupAddressField')),
+      'Cebu City',
+    );
+    await tester.enterText(
+      find.byKey(const Key('signupUsernameField')),
+      'paolo.member',
+    );
+    await tester.enterText(
+      find.byKey(const Key('signupPasswordField')),
+      'password123',
+    );
+    await tester.enterText(
+      find.byKey(const Key('signupConfirmPasswordField')),
+      'password123',
+    );
+    await tester.tap(find.byKey(const Key('signupButton')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('My Account'), findsWidgets);
+    expect(find.text('Members'), findsNothing);
+    expect(find.text('Savings'), findsNothing);
+    expect(find.text('Reports'), findsNothing);
+    expect(find.text('Backup'), findsNothing);
   });
 
   testWidgets('administrator can log in and see dashboard', (tester) async {
