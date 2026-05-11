@@ -1,0 +1,2 @@
+[functions.pqr-api]
+verify_jwt = false

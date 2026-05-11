@@ -185,7 +185,13 @@ async function memberBootstrap(session: SessionContext) {
 
   const [members, savingsTransactions, loans, users] = await Promise.all([
     selectBy("members", "id", memberId, "member_code"),
-    selectBy("savings_transactions", "member_id", memberId, "occurred_at", false),
+    selectBy(
+      "savings_transactions",
+      "member_id",
+      memberId,
+      "occurred_at",
+      false,
+    ),
     selectBy("loans", "member_id", memberId, "applied_at", false),
     selectBy("app_users", "id", session.user.id, "created_at", true),
   ]);
@@ -215,7 +221,12 @@ async function membersRoute(
       if (!session.user.member_id) {
         return [];
       }
-      return await selectBy("members", "id", session.user.member_id, "member_code");
+      return await selectBy(
+        "members",
+        "id",
+        session.user.member_id,
+        "member_code",
+      );
     }
     return await selectAll("members", "member_code");
   }
@@ -268,7 +279,10 @@ async function membersRoute(
   }
 
   if (req.method === "DELETE") {
-    const { error } = await supabase.from("members").delete().eq("id", memberId);
+    const { error } = await supabase.from("members").delete().eq(
+      "id",
+      memberId,
+    );
     throwIfDb(error);
     await audit(session.user.id, "delete_member", "members", memberId);
     return { deleted: true, id: memberId };
@@ -322,7 +336,13 @@ async function loansRoute(
       if (!session.user.member_id) {
         return [];
       }
-      return await selectBy("loans", "member_id", session.user.member_id, "applied_at", false);
+      return await selectBy(
+        "loans",
+        "member_id",
+        session.user.member_id,
+        "applied_at",
+        false,
+      );
     }
     return await selectAll("loans", "applied_at", false);
   }
@@ -338,8 +358,14 @@ async function loansRoute(
 
     const insert = {
       member_id: memberId,
-      principal: requiredPositiveNumber(body.principal, "Principal is required."),
-      term_months: optionalInteger(body.term_months, "Term must be a whole number of months."),
+      principal: requiredPositiveNumber(
+        body.principal,
+        "Principal is required.",
+      ),
+      term_months: optionalInteger(
+        body.term_months,
+        "Term must be a whole number of months.",
+      ),
       applied_at: new Date().toISOString(),
       status: "pending",
     };
@@ -387,11 +413,19 @@ async function loansRoute(
       .single();
 
     throwIfDb(error);
-    await audit(session.user.id, "update_loan_status", "loans", route[1], updates);
+    await audit(
+      session.user.id,
+      "update_loan_status",
+      "loans",
+      route[1],
+      updates,
+    );
     return data;
   }
 
-  if (route.length === 3 && route[2] === "repayments" && req.method === "POST") {
+  if (
+    route.length === 3 && route[2] === "repayments" && req.method === "POST"
+  ) {
     requireStaff(session);
     const body = await readJson(req);
     const { data, error } = await supabase.rpc("record_loan_repayment", {
@@ -424,7 +458,10 @@ async function usersRoute(
     const body = await readJson(req);
     const { data, error } = await supabase.rpc("create_app_user", {
       p_actor_id: session.user.id,
-      p_display_name: requiredString(body.display_name, "Display name is required."),
+      p_display_name: requiredString(
+        body.display_name,
+        "Display name is required.",
+      ),
       p_username: requiredString(body.username, "Username is required."),
       p_password: requiredString(body.password, "Password is required."),
       p_role: requiredString(body.role, "Role is required."),
@@ -439,7 +476,10 @@ async function usersRoute(
     const { data, error } = await supabase.rpc("update_app_user", {
       p_actor_id: session.user.id,
       p_user_id: route[1],
-      p_display_name: requiredString(body.display_name, "Display name is required."),
+      p_display_name: requiredString(
+        body.display_name,
+        "Display name is required.",
+      ),
       p_username: requiredString(body.username, "Username is required."),
       p_password: `${body.password ?? ""}`,
       p_role: requiredString(body.role, "Role is required."),
@@ -483,13 +523,16 @@ async function memberAccountsRoute(
     .single();
   throwIfDb(memberError);
 
-  const { data: user, error: userError } = await supabase.rpc("create_app_user", {
-    p_actor_id: session.user.id,
-    p_display_name: fullName,
-    p_username: username,
-    p_password: password,
-    p_role: "member",
-  });
+  const { data: user, error: userError } = await supabase.rpc(
+    "create_app_user",
+    {
+      p_actor_id: session.user.id,
+      p_display_name: fullName,
+      p_username: username,
+      p_password: password,
+      p_role: "member",
+    },
+  );
   if (userError) {
     await supabase.from("members").delete().eq("id", member.id);
     throwIfDb(userError);
@@ -512,10 +555,16 @@ async function memberAccountsRoute(
   }
 
   await audit(session.user.id, "create_member", "members", member.id, member);
-  await audit(session.user.id, "create_member_user", "app_users", updatedUser.id, {
-    member_id: member.id,
-    username,
-  });
+  await audit(
+    session.user.id,
+    "create_member_user",
+    "app_users",
+    updatedUser.id,
+    {
+      member_id: member.id,
+      username,
+    },
+  );
 
   return publicUser(updatedUser);
 }
@@ -528,17 +577,21 @@ async function backupsRoute(req: Request, session: SessionContext) {
   }
 
   if (req.method === "POST") {
-    const [members, savingsTransactions, loans, repayments] = await Promise.all([
-      selectAll("members", "member_code"),
-      selectAll("savings_transactions", "occurred_at", false),
-      selectAll("loans", "applied_at", false),
-      selectAll("repayments", "paid_at", false),
-    ]);
+    const [members, savingsTransactions, loans, repayments] = await Promise.all(
+      [
+        selectAll("members", "member_code"),
+        selectAll("savings_transactions", "occurred_at", false),
+        selectAll("loans", "applied_at", false),
+        selectAll("repayments", "paid_at", false),
+      ],
+    );
 
     const summary = {
       generated_at: new Date().toISOString(),
       total_members: members.length,
-      active_members: members.filter((member: any) => member.status === "active").length,
+      active_members: members.filter((member: any) =>
+        member.status === "active"
+      ).length,
       savings_transactions: savingsTransactions.length,
       loans: loans.length,
       repayments: repayments.length,
@@ -692,7 +745,9 @@ function requireAdministrator(session: SessionContext) {
   }
 }
 
-function requireStaff(session: SessionContext): asserts session is SessionContext & {
+function requireStaff(
+  session: SessionContext,
+): asserts session is SessionContext & {
   user: SessionContext["user"] & { role: StaffRole };
 } {
   if (session.user.role === "member") {
@@ -776,15 +831,22 @@ function optionalInteger(value: unknown, message: string) {
 
 function routeParts(req: Request) {
   const parts = new URL(req.url).pathname.split("/").filter(Boolean);
-  if (parts.length >= 4 && parts[0] === "functions" && parts[1] === "v1") {
-    return parts.slice(3);
-  }
-  const pqrFunctionIndex = parts.findIndex((part) => part === "pqr-api");
-  if (pqrFunctionIndex >= 0) {
-    return parts.slice(pqrFunctionIndex + 1);
-  }
-  return parts;
+  const routeIndex = parts.findIndex((part) => routeNames.has(part));
+  return routeIndex === -1 ? [] : parts.slice(routeIndex);
 }
+
+const routeNames = new Set([
+  "login",
+  "signup",
+  "logout",
+  "bootstrap",
+  "members",
+  "savings-transactions",
+  "loans",
+  "users",
+  "member-accounts",
+  "backups",
+]);
 
 async function sha256Hex(value: string) {
   const bytes = new TextEncoder().encode(value);
