@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import * as bcrypt from "bcrypt";
 
 type UserRole = "administrator" | "treasurer" | "member";
 type StaffRole = "administrator" | "treasurer";
@@ -100,45 +101,64 @@ Deno.serve(async (req: Request) => {
 
 async function login(req: Request) {
   const body = await readJson(req);
-  const username = requiredString(body.username, "Username is required.");
+  const username = cleanUsername(body.username, "Username is required.");
   const password = requiredString(body.password, "Password is required.");
 
-  const { data, error } = await supabase.rpc("pqr_login", {
-    p_username: username,
-    p_password: password,
-  });
-
-  if (error) {
-    if (error.message.includes("Invalid username or password")) {
-      throw new ApiError("Invalid username or password.", 401);
-    }
-    throw new ApiError(error.message, 500);
+  const user = await findUserByUsername(username);
+  if (
+    !user?.is_active ||
+    !user.password_hash ||
+    !(await bcrypt.compare(password, user.password_hash))
+  ) {
+    throw new ApiError("Invalid username or password.", 401);
   }
 
-  const row = Array.isArray(data) ? data[0] : data;
-  if (!row?.token || !row?.user_record) {
-    throw new ApiError("Login did not return a session.", 500);
-  }
-
-  return { token: row.token, user: row.user_record };
+  const token = await createSession(user.id);
+  await audit(user.id, "login", "app_users", user.id);
+  return { token, user: publicUser(user) };
 }
 
 async function signUp(req: Request) {
   const body = await readJson(req);
-  const { data, error } = await supabase.rpc("pqr_member_signup", {
-    p_full_name: requiredString(body.full_name, "Full name is required."),
-    p_address: requiredString(body.address, "Address is required."),
-    p_phone: requiredString(body.phone, "Phone is required."),
-    p_username: requiredString(body.username, "Username is required."),
-    p_password: requiredString(body.password, "Password is required."),
-  });
+  const fullName = requiredString(body.full_name, "Full name is required.");
+  const address = requiredString(body.address, "Address is required.");
+  const phone = requiredString(body.phone, "Phone is required.");
+  const username = cleanUsername(body.username, "Username is required.");
+  const password = requiredString(body.password, "Password is required.");
 
-  throwIfDb(error);
-  const row = Array.isArray(data) ? data[0] : data;
-  if (!row?.token || !row?.user_record) {
-    throw new ApiError("Sign up did not return a session.", 500);
+  await ensureUsernameAvailable(username);
+
+  const { data: member, error: memberError } = await supabase
+    .from("members")
+    .insert({ full_name: fullName, address, phone, status: "active" })
+    .select()
+    .single();
+  throwIfDb(memberError);
+
+  const { data: user, error: userError } = await supabase
+    .from("app_users")
+    .insert({
+      display_name: fullName,
+      username,
+      password_hash: await bcrypt.hash(password),
+      role: "member",
+      member_id: member.id,
+    })
+    .select()
+    .single();
+
+  if (userError || !user) {
+    await supabase.from("members").delete().eq("id", member.id);
+    throwIfDb(userError);
+    throw new ApiError("Unable to create member account.", 500);
   }
-  return { token: row.token, user: row.user_record };
+
+  const token = await createSession(user.id);
+  await audit(user.id, "member_signup", "app_users", user.id, {
+    member_id: member.id,
+    username,
+  });
+  return { token, user: publicUser(user) };
 }
 
 async function logout(session: SessionContext) {
@@ -456,37 +476,68 @@ async function usersRoute(
 
   if (req.method === "POST" && route.length === 1) {
     const body = await readJson(req);
-    const { data, error } = await supabase.rpc("create_app_user", {
-      p_actor_id: session.user.id,
-      p_display_name: requiredString(
-        body.display_name,
-        "Display name is required.",
-      ),
-      p_username: requiredString(body.username, "Username is required."),
-      p_password: requiredString(body.password, "Password is required."),
-      p_role: requiredString(body.role, "Role is required."),
-    });
+    const username = cleanUsername(body.username, "Username is required.");
+    await ensureUsernameAvailable(username);
+    const { data, error } = await supabase
+      .from("app_users")
+      .insert({
+        display_name: requiredString(
+          body.display_name,
+          "Display name is required.",
+        ),
+        username,
+        password_hash: await bcrypt.hash(
+          requiredString(body.password, "Password is required."),
+        ),
+        role: requiredString(body.role, "Role is required."),
+      })
+      .select()
+      .single();
 
     throwIfDb(error);
+    await audit(
+      session.user.id,
+      "create_user",
+      "app_users",
+      data.id,
+      publicUser(data),
+    );
     return publicUser(data);
   }
 
   if (req.method === "PATCH" && route.length === 2) {
     const body = await readJson(req);
-    const { data, error } = await supabase.rpc("update_app_user", {
-      p_actor_id: session.user.id,
-      p_user_id: route[1],
-      p_display_name: requiredString(
+    const username = cleanUsername(body.username, "Username is required.");
+    await ensureUsernameAvailable(username, route[1]);
+    const password = `${body.password ?? ""}`.trim();
+    const updates: Record<string, unknown> = {
+      display_name: requiredString(
         body.display_name,
         "Display name is required.",
       ),
-      p_username: requiredString(body.username, "Username is required."),
-      p_password: `${body.password ?? ""}`,
-      p_role: requiredString(body.role, "Role is required."),
-      p_is_active: body.is_active ?? true,
-    });
+      username,
+      role: requiredString(body.role, "Role is required."),
+      is_active: body.is_active ?? true,
+    };
+    if (password !== "") {
+      updates.password_hash = await bcrypt.hash(password);
+    }
+
+    const { data, error } = await supabase
+      .from("app_users")
+      .update(updates)
+      .eq("id", route[1])
+      .select()
+      .single();
 
     throwIfDb(error);
+    await audit(
+      session.user.id,
+      "update_user",
+      "app_users",
+      route[1],
+      publicUser(data),
+    );
     return publicUser(data);
   }
 
@@ -508,8 +559,9 @@ async function memberAccountsRoute(
   const fullName = requiredString(body.full_name, "Full name is required.");
   const address = requiredString(body.address, "Address is required.");
   const phone = requiredString(body.phone, "Phone is required.");
-  const username = requiredString(body.username, "Username is required.");
+  const username = cleanUsername(body.username, "Username is required.");
   const password = requiredString(body.password, "Password is required.");
+  await ensureUsernameAvailable(username);
 
   const { data: member, error: memberError } = await supabase
     .from("members")
@@ -523,16 +575,17 @@ async function memberAccountsRoute(
     .single();
   throwIfDb(memberError);
 
-  const { data: user, error: userError } = await supabase.rpc(
-    "create_app_user",
-    {
-      p_actor_id: session.user.id,
-      p_display_name: fullName,
-      p_username: username,
-      p_password: password,
-      p_role: "member",
-    },
-  );
+  const { data: user, error: userError } = await supabase
+    .from("app_users")
+    .insert({
+      display_name: fullName,
+      username,
+      password_hash: await bcrypt.hash(password),
+      role: "member",
+      member_id: member.id,
+    })
+    .select()
+    .single();
   if (userError) {
     await supabase.from("members").delete().eq("id", member.id);
     throwIfDb(userError);
@@ -542,31 +595,19 @@ async function memberAccountsRoute(
     throw new ApiError("Unable to create member user.", 500);
   }
 
-  const { data: updatedUser, error: updatedUserError } = await supabase
-    .from("app_users")
-    .update({ member_id: member.id })
-    .eq("id", user.id)
-    .select()
-    .single();
-  if (updatedUserError || !updatedUser) {
-    await supabase.from("app_users").delete().eq("id", user.id);
-    await supabase.from("members").delete().eq("id", member.id);
-    throwIfDb(updatedUserError);
-  }
-
   await audit(session.user.id, "create_member", "members", member.id, member);
   await audit(
     session.user.id,
     "create_member_user",
     "app_users",
-    updatedUser.id,
+    user.id,
     {
       member_id: member.id,
       username,
     },
   );
 
-  return publicUser(updatedUser);
+  return publicUser(user);
 }
 
 async function backupsRoute(req: Request, session: SessionContext) {
@@ -625,17 +666,11 @@ async function requireSession(req: Request): Promise<SessionContext> {
   }
 
   const tokenHash = await sha256Hex(token);
-  const { data, error } = await supabase
-    .from("app_sessions")
-    .select(
-      "token_hash, expires_at, revoked_at, user:app_users(id, username, display_name, role, member_id, is_active)",
-    )
-    .eq("token_hash", tokenHash)
-    .maybeSingle();
+  const data = await findSession(tokenHash);
 
-  throwIfDb(error);
-
-  const user = Array.isArray(data?.user) ? data?.user[0] : data?.user;
+  const user = (Array.isArray(data?.user) ? data?.user[0] : data?.user) as
+    | any
+    | null;
   if (
     !data ||
     data.revoked_at ||
@@ -660,6 +695,36 @@ async function requireSession(req: Request): Promise<SessionContext> {
       member_id: user.member_id ?? null,
     },
   };
+}
+
+async function findSession(tokenHash: string) {
+  const withMemberId = await supabase
+    .from("app_sessions")
+    .select(
+      "token_hash, expires_at, revoked_at, user:app_users(id, username, display_name, role, member_id, is_active)",
+    )
+    .eq("token_hash", tokenHash)
+    .maybeSingle();
+
+  if (!withMemberId.error) {
+    return withMemberId.data;
+  }
+
+  const message = `${withMemberId.error.message ?? ""}`;
+  if (!message.includes("member_id")) {
+    throwIfDb(withMemberId.error);
+  }
+
+  const withoutMemberId = await supabase
+    .from("app_sessions")
+    .select(
+      "token_hash, expires_at, revoked_at, user:app_users(id, username, display_name, role, is_active)",
+    )
+    .eq("token_hash", tokenHash)
+    .maybeSingle();
+
+  throwIfDb(withoutMemberId.error);
+  return withoutMemberId.data;
 }
 
 async function selectAll(table: string, order: string, ascending = true) {
@@ -704,6 +769,58 @@ async function selectIn(
 
   throwIfDb(error);
   return data ?? [];
+}
+
+async function findUserByUsername(username: string) {
+  const withMemberId = await supabase
+    .from("app_users")
+    .select(
+      "id, username, display_name, role, member_id, is_active, password_hash, created_at, updated_at",
+    )
+    .ilike("username", username)
+    .maybeSingle();
+
+  if (!withMemberId.error) {
+    return withMemberId.data;
+  }
+
+  const message = `${withMemberId.error.message ?? ""}`;
+  if (!message.includes("member_id")) {
+    throwIfDb(withMemberId.error);
+  }
+
+  const withoutMemberId = await supabase
+    .from("app_users")
+    .select(
+      "id, username, display_name, role, is_active, password_hash, created_at, updated_at",
+    )
+    .ilike("username", username)
+    .maybeSingle();
+
+  throwIfDb(withoutMemberId.error);
+  return withoutMemberId.data;
+}
+
+async function ensureUsernameAvailable(
+  username: string,
+  currentUserId?: string,
+) {
+  const existing = await findUserByUsername(username);
+  if (existing && existing.id !== currentUserId) {
+    throw new ApiError("Username already exists.", 400);
+  }
+}
+
+async function createSession(userId: string) {
+  const token = randomHex(32);
+  const { error } = await supabase.from("app_sessions").insert({
+    token_hash: await sha256Hex(token),
+    user_id: userId,
+    expires_at: new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString(),
+  });
+
+  throwIfDb(error);
+  return token;
 }
 
 async function audit(
@@ -798,6 +915,10 @@ function requiredString(value: unknown, message: string) {
   return value.trim();
 }
 
+function cleanUsername(value: unknown, message: string) {
+  return requiredString(value, message).toLowerCase();
+}
+
 function requiredPositiveNumber(value: unknown, message: string) {
   const numberValue = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(numberValue) || numberValue <= 0) {
@@ -852,6 +973,13 @@ async function sha256Hex(value: string) {
   const bytes = new TextEncoder().encode(value);
   const hash = await crypto.subtle.digest("SHA-256", bytes);
   return Array.from(new Uint8Array(hash))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+function randomHex(byteCount: number) {
+  const bytes = crypto.getRandomValues(new Uint8Array(byteCount));
+  return Array.from(bytes)
     .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("");
 }
