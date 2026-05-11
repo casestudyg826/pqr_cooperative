@@ -115,6 +115,30 @@ class SupabaseBackendApi implements BackendApi {
   }
 
   @override
+  Future<AppUser> addMemberAccount(
+    String sessionToken, {
+    required String fullName,
+    required String address,
+    required String phone,
+    required String username,
+    required String password,
+  }) async {
+    final data = await _request(
+      'POST',
+      'member-accounts',
+      sessionToken: sessionToken,
+      body: {
+        'full_name': fullName,
+        'address': address,
+        'phone': phone,
+        'username': username,
+        'password': password,
+      },
+    );
+    return AppUser.fromJson(data);
+  }
+
+  @override
   Future<AppUser> updateUser(
     String sessionToken, {
     required String id,

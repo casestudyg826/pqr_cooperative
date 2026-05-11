@@ -237,6 +237,43 @@ class MemoryBackendApi implements BackendApi {
   }
 
   @override
+  Future<AppUser> addMemberAccount(
+    String sessionToken, {
+    required String fullName,
+    required String address,
+    required String phone,
+    required String username,
+    required String password,
+  }) async {
+    final cleanUsername = username.trim();
+    if (cleanUsername.isEmpty || password.trim().isEmpty) {
+      throw const BackendException('Unable to save user.');
+    }
+    if (_users.any(
+      (user) => user.username.toLowerCase() == cleanUsername.toLowerCase(),
+    )) {
+      throw const BackendException('Username already exists.');
+    }
+
+    final member = await addMember(
+      sessionToken,
+      fullName: fullName,
+      address: address,
+      phone: phone,
+    );
+    final user = AppUser(
+      id: 'u${DateTime.now().microsecondsSinceEpoch}',
+      username: cleanUsername,
+      displayName: member.fullName,
+      role: UserRole.member,
+      memberId: member.id,
+    );
+    _users.add(user);
+    _passwords[cleanUsername.toLowerCase()] = password.trim();
+    return user;
+  }
+
+  @override
   Future<AppUser> updateUser(
     String sessionToken, {
     required String id,

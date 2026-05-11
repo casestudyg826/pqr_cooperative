@@ -180,6 +180,54 @@ void main() {
     expect(find.text('Carlo Mendoza'), findsOneWidget);
   });
 
+  testWidgets(
+    'user management can create a member account reflected in members tab',
+    (tester) async {
+      configureDesktopView(tester);
+      await tester.pumpWidget(buildTestApp());
+      await tester.tap(find.byKey(const Key('loginButton')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Backup'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('addMemberAccountButton')));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.widgetWithText(TextFormField, 'Full name'),
+        'Lara Cruz',
+      );
+      await tester.enterText(
+        find.widgetWithText(TextFormField, 'Phone'),
+        '0917 222 1111',
+      );
+      await tester.enterText(
+        find.widgetWithText(TextFormField, 'Address'),
+        'Cebu City',
+      );
+      await tester.enterText(
+        find.widgetWithText(TextFormField, 'Username'),
+        'lara.member',
+      );
+      await tester.enterText(
+        find.widgetWithText(TextFormField, 'Password'),
+        'password123',
+      );
+      await tester.enterText(
+        find.widgetWithText(TextFormField, 'Confirm password'),
+        'password123',
+      );
+      await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('lara.member • Member'), findsOneWidget);
+
+      await tester.tap(find.text('Members'));
+      await tester.pumpAndSettle();
+      expect(find.text('Lara Cruz'), findsOneWidget);
+    },
+  );
+
   testWidgets('members table shows loan details', (tester) async {
     configureDesktopView(tester, size: const Size(2600, 900));
     await tester.pumpWidget(buildTestApp());

@@ -137,6 +137,15 @@ abstract class BackendApi {
     required UserRole role,
   });
 
+  Future<AppUser> addMemberAccount(
+    String sessionToken, {
+    required String fullName,
+    required String address,
+    required String phone,
+    required String username,
+    required String password,
+  });
+
   Future<AppUser> updateUser(
     String sessionToken, {
     required String id,

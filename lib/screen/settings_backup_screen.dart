@@ -106,6 +106,7 @@ class _SettingsBackupScreenState extends State<SettingsBackupScreen> {
           _UserManagementCard(
             currentUser: user,
             onAdd: () => _showUserDialog(context),
+            onAddMemberAccount: () => _showMemberAccountDialog(context),
             onEdit: (target) => _showUserDialog(context, user: target),
           ),
         ],
@@ -271,6 +272,128 @@ class _SettingsBackupScreenState extends State<SettingsBackupScreen> {
     }
   }
 
+  Future<void> _showMemberAccountDialog(BuildContext context) async {
+    final app = AppScope.of(context);
+    final fullNameController = TextEditingController();
+    final addressController = TextEditingController();
+    final phoneController = TextEditingController();
+    final usernameController = TextEditingController();
+    final passwordController = TextEditingController();
+    final confirmPasswordController = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Add member account'),
+          content: SizedBox(
+            width: 560,
+            child: Form(
+              key: formKey,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextFormField(
+                    controller: fullNameController,
+                    decoration: const InputDecoration(labelText: 'Full name'),
+                    validator: _required,
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: phoneController,
+                    decoration: const InputDecoration(labelText: 'Phone'),
+                    validator: _required,
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: addressController,
+                    decoration: const InputDecoration(labelText: 'Address'),
+                    minLines: 2,
+                    maxLines: 3,
+                    validator: _required,
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: usernameController,
+                    decoration: const InputDecoration(labelText: 'Username'),
+                    validator: _required,
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: passwordController,
+                    decoration: const InputDecoration(labelText: 'Password'),
+                    validator: _required,
+                    obscureText: true,
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: confirmPasswordController,
+                    decoration: const InputDecoration(
+                      labelText: 'Confirm password',
+                    ),
+                    obscureText: true,
+                    validator: (value) {
+                      if (value == null || value.trim().isEmpty) {
+                        return 'Required.';
+                      }
+                      if (value != passwordController.text) {
+                        return 'Passwords do not match.';
+                      }
+                      return null;
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () async {
+                if (!formKey.currentState!.validate()) {
+                  return;
+                }
+
+                final success = await app.addMemberAccount(
+                  fullName: fullNameController.text,
+                  address: addressController.text,
+                  phone: phoneController.text,
+                  username: usernameController.text,
+                  password: passwordController.text,
+                );
+
+                if (!context.mounted || !dialogContext.mounted) {
+                  return;
+                }
+
+                if (!success) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        'Unable to create member account. Check fields or username uniqueness.',
+                      ),
+                    ),
+                  );
+                  return;
+                }
+
+                Navigator.of(dialogContext).pop();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Member account created.')),
+                );
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   static String? _required(String? value) {
     if (value == null || value.trim().isEmpty) {
       return 'Required.';
@@ -283,11 +406,13 @@ class _UserManagementCard extends StatelessWidget {
   const _UserManagementCard({
     required this.currentUser,
     required this.onAdd,
+    required this.onAddMemberAccount,
     required this.onEdit,
   });
 
   final AppUser currentUser;
   final VoidCallback onAdd;
+  final VoidCallback onAddMemberAccount;
   final ValueChanged<AppUser> onEdit;
 
   @override
@@ -307,13 +432,23 @@ class _UserManagementCard extends StatelessWidget {
             ),
           )
         else
-          Align(
-            alignment: Alignment.centerLeft,
-            child: FilledButton.icon(
-              onPressed: onAdd,
-              icon: const Icon(Icons.person_add_alt_1),
-              label: const Text('Add user'),
-            ),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              FilledButton.icon(
+                key: const Key('addUserButton'),
+                onPressed: onAdd,
+                icon: const Icon(Icons.person_add_alt_1),
+                label: const Text('Add user'),
+              ),
+              OutlinedButton.icon(
+                key: const Key('addMemberAccountButton'),
+                onPressed: onAddMemberAccount,
+                icon: const Icon(Icons.groups_outlined),
+                label: const Text('Add member account'),
+              ),
+            ],
           ),
         const SizedBox(height: 12),
         for (final user in users)
@@ -342,7 +477,11 @@ class _UserManagementCard extends StatelessWidget {
                         style: const TextStyle(fontWeight: FontWeight.w700),
                       ),
                       const SizedBox(height: 2),
-                      Text('${user.username} • ${user.roleLabel}'),
+                      Text(
+                        user.memberId == null
+                            ? '${user.username} • ${user.roleLabel}'
+                            : '${user.username} • ${user.roleLabel} • ${app.members.findById(user.memberId!)?.memberCode ?? 'No member'}',
+                      ),
                     ],
                   ),
                 ),

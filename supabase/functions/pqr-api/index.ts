@@ -79,6 +79,10 @@ Deno.serve(async (req: Request) => {
       return json(await usersRoute(req, route, session));
     }
 
+    if (route[0] === "member-accounts") {
+      return json(await memberAccountsRoute(req, route, session));
+    }
+
     if (route[0] === "backups") {
       return json(await backupsRoute(req, session));
     }
@@ -446,6 +450,73 @@ async function usersRoute(
   }
 
   throw new ApiError("Method is not allowed.", 405);
+}
+
+async function memberAccountsRoute(
+  req: Request,
+  route: string[],
+  session: SessionContext,
+) {
+  requireAdministrator(session);
+
+  if (req.method !== "POST" || route.length !== 1) {
+    throw new ApiError("Method is not allowed.", 405);
+  }
+
+  const body = await readJson(req);
+  const fullName = requiredString(body.full_name, "Full name is required.");
+  const address = requiredString(body.address, "Address is required.");
+  const phone = requiredString(body.phone, "Phone is required.");
+  const username = requiredString(body.username, "Username is required.");
+  const password = requiredString(body.password, "Password is required.");
+
+  const { data: member, error: memberError } = await supabase
+    .from("members")
+    .insert({
+      full_name: fullName,
+      address,
+      phone,
+      status: "active",
+    })
+    .select()
+    .single();
+  throwIfDb(memberError);
+
+  const { data: user, error: userError } = await supabase.rpc("create_app_user", {
+    p_actor_id: session.user.id,
+    p_display_name: fullName,
+    p_username: username,
+    p_password: password,
+    p_role: "member",
+  });
+  if (userError) {
+    await supabase.from("members").delete().eq("id", member.id);
+    throwIfDb(userError);
+  }
+  if (!user) {
+    await supabase.from("members").delete().eq("id", member.id);
+    throw new ApiError("Unable to create member user.", 500);
+  }
+
+  const { data: updatedUser, error: updatedUserError } = await supabase
+    .from("app_users")
+    .update({ member_id: member.id })
+    .eq("id", user.id)
+    .select()
+    .single();
+  if (updatedUserError || !updatedUser) {
+    await supabase.from("app_users").delete().eq("id", user.id);
+    await supabase.from("members").delete().eq("id", member.id);
+    throwIfDb(updatedUserError);
+  }
+
+  await audit(session.user.id, "create_member", "members", member.id, member);
+  await audit(session.user.id, "create_member_user", "app_users", updatedUser.id, {
+    member_id: member.id,
+    username,
+  });
+
+  return publicUser(updatedUser);
 }
 
 async function backupsRoute(req: Request, session: SessionContext) {

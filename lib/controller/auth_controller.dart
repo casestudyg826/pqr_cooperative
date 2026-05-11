@@ -96,6 +96,30 @@ class AuthController extends ChangeNotifier {
     }
   }
 
+  Future<bool> addMemberAccount({
+    required String fullName,
+    required String address,
+    required String phone,
+    required String username,
+    required String password,
+  }) async {
+    try {
+      final user = await _backend.addMemberAccount(
+        _sessionToken(),
+        fullName: fullName,
+        address: address,
+        phone: phone,
+        username: username,
+        password: password,
+      );
+      _users.add(user);
+      notifyListeners();
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<bool> updateUser({
     required String id,
     required String displayName,

@@ -101,6 +101,28 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<bool> addMemberAccount({
+    required String fullName,
+    required String address,
+    required String phone,
+    required String username,
+    required String password,
+  }) async {
+    final created = await auth.addMemberAccount(
+      fullName: fullName,
+      address: address,
+      phone: phone,
+      username: username,
+      password: password,
+    );
+    if (!created) {
+      return false;
+    }
+
+    await _loadAuthenticatedSnapshot();
+    return true;
+  }
+
   String _requireSessionToken() {
     final token = auth.sessionToken;
     if (token == null) {
