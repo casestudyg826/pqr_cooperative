@@ -776,9 +776,12 @@ function optionalInteger(value: unknown, message: string) {
 
 function routeParts(req: Request) {
   const parts = new URL(req.url).pathname.split("/").filter(Boolean);
-  const functionIndex = parts.findIndex((part) => part === "pqr-api");
-  if (functionIndex >= 0) {
-    return parts.slice(functionIndex + 1);
+  if (parts.length >= 4 && parts[0] === "functions" && parts[1] === "v1") {
+    return parts.slice(3);
+  }
+  const pqrFunctionIndex = parts.findIndex((part) => part === "pqr-api");
+  if (pqrFunctionIndex >= 0) {
+    return parts.slice(pqrFunctionIndex + 1);
   }
   return parts;
 }
