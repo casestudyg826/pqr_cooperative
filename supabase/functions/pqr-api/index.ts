@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import * as bcrypt from "bcrypt";
+import bcrypt from "bcryptjs";
 
 type UserRole = "administrator" | "treasurer" | "member";
 type StaffRole = "administrator" | "treasurer";
@@ -104,18 +104,24 @@ async function login(req: Request) {
   const username = cleanUsername(body.username, "Username is required.");
   const password = requiredString(body.password, "Password is required.");
 
-  const user = await findUserByUsername(username);
-  if (
-    !user?.is_active ||
-    !user.password_hash ||
-    !(await bcrypt.compare(password, user.password_hash))
-  ) {
-    throw new ApiError("Invalid username or password.", 401);
+  const { data, error } = await supabase.rpc("pqr_login", {
+    p_username: username,
+    p_password: password,
+  });
+
+  if (error) {
+    if (error.message.includes("Invalid username or password")) {
+      throw new ApiError("Invalid username or password.", 401);
+    }
+    throwIfDb(error);
   }
 
-  const token = await createSession(user.id);
-  await audit(user.id, "login", "app_users", user.id);
-  return { token, user: publicUser(user) };
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row?.token || !row?.user_record) {
+    throw new ApiError("Login did not return a session.", 500);
+  }
+
+  return { token: row.token, user: row.user_record };
 }
 
 async function signUp(req: Request) {
@@ -140,7 +146,7 @@ async function signUp(req: Request) {
     .insert({
       display_name: fullName,
       username,
-      password_hash: await bcrypt.hash(password),
+      password_hash: await bcrypt.hash(password, 10),
       role: "member",
       member_id: member.id,
     })
@@ -488,6 +494,7 @@ async function usersRoute(
         username,
         password_hash: await bcrypt.hash(
           requiredString(body.password, "Password is required."),
+          10,
         ),
         role: requiredString(body.role, "Role is required."),
       })
@@ -520,7 +527,7 @@ async function usersRoute(
       is_active: body.is_active ?? true,
     };
     if (password !== "") {
-      updates.password_hash = await bcrypt.hash(password);
+      updates.password_hash = await bcrypt.hash(password, 10);
     }
 
     const { data, error } = await supabase
@@ -580,7 +587,7 @@ async function memberAccountsRoute(
     .insert({
       display_name: fullName,
       username,
-      password_hash: await bcrypt.hash(password),
+      password_hash: await bcrypt.hash(password, 10),
       role: "member",
       member_id: member.id,
     })
